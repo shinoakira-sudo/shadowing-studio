@@ -114,6 +114,17 @@ input[type=range]{width:100%;accent-color:var(--accent);min-width:0}
 .meter{height:10px;border-radius:999px;background:var(--surface2);overflow:hidden}
 .meter i{display:block;height:100%;width:0;background:var(--rec);transition:width .08s}
 .recbox .hint{font-size:13px;color:var(--muted)}
+.recpanel.live{background:transparent;pointer-events:none}
+.recpanel.live .recbox{pointer-events:auto;box-shadow:var(--shadow);border:1px solid var(--line);padding:12px 16px;gap:8px;
+  grid-template-columns:auto 1fr auto;grid-template-areas:"mode mode mode" "time meter stop" "hint hint hint";align-items:center;text-align:left}
+.recpanel.live #recMode{grid-area:mode}
+.recpanel.live .rectime{grid-area:time;font-size:22px}
+.recpanel.live .meter{grid-area:meter}
+.recpanel.live #recHint{grid-area:hint;font-size:12px;margin:0}
+.recpanel.live #recLiveRow{grid-area:stop;display:flex;gap:8px}
+.recpanel.live #recLiveRow .btn{height:40px;padding:0 14px;font-size:13px;flex:0 0 auto}
+.recpanel.live #recOpts,.recpanel.live #recWarn,.recpanel.live #recReadyRow{display:none}
+.rectime.count{color:var(--accent)}
 .btn{height:48px;border-radius:14px;background:var(--accent);color:var(--accent-fg);font-weight:700;font-size:15px;display:grid;place-items:center;padding:0 18px;font-family:var(--font-jp)}
 .btn.ghost{background:var(--surface2);color:var(--fg);border:1px solid var(--line)}
 .btn.stop{background:var(--rec);color:#fff}
@@ -478,12 +489,12 @@ function syncRecOpts(){ $('optModel').setAttribute('aria-pressed',R.playModel); 
 function openRecordSheet(){
   stopPlay();
   $('recMode').textContent='シャドーイングを録音'; $('recTime').textContent='0:00'; $('meter').style.width='0';
-  $('recHint').textContent=`「録音を開始」を押すと、お手本（${S.speed.toFixed(1)}×）が再生されます。聞きながら同時に声に出してください。終わったら「停止して評価」。`;
+  $('recHint').textContent=`「録音を開始」→ 3・2・1 のカウント後にお手本（${S.speed.toFixed(1)}×）が流れます。録音中は原稿が見えたまま、下のバーだけが残ります。終わったら「停止して評価」。`;
   $('recReadyRow').hidden=false; $('recLiveRow').hidden=true; $('recOpts').hidden=false; syncRecOpts(); $('recpanel').hidden=false;
 }
 async function startRecording(){
-  stopPlay(); primeAudio(S.cur); R.transcript=[]; R.chunks=[]; R.pauses=0; R.audioUrl=null;
-  $('recReadyRow').hidden=true; $('recLiveRow').hidden=false;
+  stopPlay(); primeAudio(S.cur); R.transcript=[]; R.chunks=[]; R.pauses=0; R.audioUrl=null; R.preroll=0; R.t0=0;
+  $('recReadyRow').hidden=true; $('recLiveRow').hidden=false; $('recpanel').classList.add('live');
   const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
   R.mode='demo';
   try{
@@ -496,9 +507,8 @@ async function startRecording(){
   $('btnRec').classList.add('on');
   $('recMode').textContent = R.mode==='full'?'録音中（マイク＋音声認識）': R.mode==='record'?'録音中（音声認識なし）':'録音デモ（マイク未使用）';
   $('recHint').textContent = R.mode==='demo' ? micReason()+' 停止後はサンプル評価を表示します。' : 'お手本と同時に声に出して、そのまま続けてください。';
-  R.t0=performance.now(); R.timer=setInterval(()=>{const s=Math.floor((performance.now()-R.t0)/1000); $('recTime').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;},200);
   if(R.stream){
-    try{ R.rec=new MediaRecorder(R.stream); R.rec.ondataavailable=e=>R.chunks.push(e.data); R.rec.start(); }catch(e){}
+    try{ R.rec=new MediaRecorder(R.stream); R.rec.ondataavailable=e=>R.chunks.push(e.data); R.rec.start(250); }catch(e){}
     try{ R.ctx=new (window.AudioContext||window.webkitAudioContext)(); const src=R.ctx.createMediaStreamSource(R.stream); const an=R.ctx.createAnalyser(); an.fftSize=512; src.connect(an); const buf=new Uint8Array(an.fftSize);
       const tick=()=>{ an.getByteTimeDomainData(buf); let m=0; for(const v of buf) m=Math.max(m,Math.abs(v-128)); $('meter').style.width=Math.min(100,m*1.6)+'%'; R.raf=requestAnimationFrame(tick); }; tick(); }catch(e){}
     if(R.mode==='full'){ R.recog=new SR(); R.recog.lang='en-US'; R.recog.continuous=true; R.recog.interimResults=true;
@@ -509,19 +519,24 @@ async function startRecording(){
   } else {
     const fake=()=>{ $('meter').style.width=(20+Math.random()*60)+'%'; R.raf=requestAnimationFrame(()=>setTimeout(fake,90)); }; fake();
   }
-  // play the model alongside, so the user shadows it
   $('recOpts').hidden=true; $('recWarn').hidden=true;
+  // 3-2-1 countdown: the recorder and recognizer are already running, so the first words are never clipped
+  const recStart=performance.now(); const t=$('recTime'); t.classList.add('count');
+  await new Promise(res=>{ let n=3; t.textContent=n; const iv=setInterval(()=>{ n--; if(n<=0||!$('btnRec').classList.contains('on')){ clearInterval(iv); res(); } else t.textContent=n; },700); });
+  t.classList.remove('count'); if(!$('btnRec').classList.contains('on')) return;   // cancelled during countdown
+  R.preroll=(performance.now()-recStart)/1000;
+  R.t0=performance.now(); R.timer=setInterval(()=>{const s=Math.floor((performance.now()-R.t0)/1000); $('recTime').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;},200);
   if(R.playModel){ S.loopsDone=0; S.loop=1; $('btnLoop').innerHTML='リピート<br>1'; playFrom(0,false); } else { setStatus('お手本なしで録音中。スクリプトを見ながら音読してください。'); }
 }
 function stopRecording(evaluate){
-  const dur=(performance.now()-R.t0)/1000;
+  const dur=R.t0?(performance.now()-R.t0)/1000:0;
   clearInterval(R.timer); cancelAnimationFrame(R.raf); $('meter').style.width='0';
   stopPlay();
   const recog=R.recog; R.recog=null; if(recog){ try{recog.stop()}catch(e){} }
   const finish=()=>{
     if(R.stream){ R.stream.getTracks().forEach(t=>t.stop()); R.stream=null; }
     if(R.ctx){ try{R.ctx.close()}catch(e){} R.ctx=null; }
-    $('recpanel').hidden=true; $('btnRec').classList.remove('on'); $('recTime').textContent='0:00';
+    $('recpanel').hidden=true; $('recpanel').classList.remove('live'); $('btnRec').classList.remove('on'); $('recTime').textContent='0:00'; $('recTime').classList.remove('count');
     if(evaluate) showFeedback(evaluateAttempt(dur));
     else setStatus('録音をやめました。');
   };
@@ -641,7 +656,7 @@ function drawPitch(root, mine, model, segs){
 async function runAiAssessment(ev){
   const aiRoot=$('aiSection'), pRoot=$('pitchSection'); if(!aiRoot) return;
   let pcm16;
-  try{ const ab=await R.blob.arrayBuffer(); pcm16=await decodeToMono(ab,16000); }
+  try{ const ab=await R.blob.arrayBuffer(); pcm16=await decodeToMono(ab,16000); if(R.preroll>0){ const cut=Math.min(pcm16.pcm.length, Math.floor(R.preroll*pcm16.sr)); pcm16={pcm:pcm16.pcm.subarray(cut), sr:pcm16.sr, dur:pcm16.dur-R.preroll}; } }
   catch(e){ aiRoot.innerHTML=`<h2>発音・イントネーション評価</h2><div class="note" style="margin:0">録音データを読み込めませんでした（${esc(String(e&&e.message||e))}）。</div>`; return; }
   // pitch first (local, fast)
   try{ const mine={track:toSemitones(pitchTrack(pcm16.pcm,pcm16.sr)), dur:pcm16.dur}; const model=await modelPitch(S.cur); drawPitch(pRoot, mine, model, hasAudio(S.cur)?TL[S.cur.id].segs:null); }
