@@ -123,7 +123,7 @@ input[type=range]{width:100%;accent-color:var(--accent);min-width:0}
 .recpanel.live #recHint{grid-area:hint;font-size:12px;margin:0}
 .recpanel.live #recLiveRow{grid-area:stop;display:flex;gap:8px}
 .recpanel.live #recLiveRow .btn{height:40px;padding:0 14px;font-size:13px;flex:0 0 auto}
-.recpanel.live #recOpts,.recpanel.live #recWarn,.recpanel.live #recReadyRow{display:none}
+.recpanel.live #recWarn,.recpanel.live #recReadyRow{display:none}
 .rectime.count{color:var(--accent)}
 .btn{height:48px;border-radius:14px;background:var(--accent);color:var(--accent-fg);font-weight:700;font-size:15px;display:grid;place-items:center;padding:0 18px;font-family:var(--font-jp)}
 .btn.ghost{background:var(--surface2);color:var(--fg);border:1px solid var(--line)}
@@ -176,7 +176,7 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
     <div class="eyebrow">教材</div>
     <div class="list" id="lib"></div>
     <button class="addbtn" id="goAdd">＋ テキストから教材を登録</button>
-    <p class="note">付属教材は事前生成した音声（ニューラルTTS）をクラウドから再生します。自作教材は端末の音声合成（TTS）を使います。録音・自動評価はブラウザのマイクと音声認識を使います。使えない環境ではサンプル評価が表示されます。</p>
+    <p class="note">付属教材は事前生成した音声（ニューラルTTS）をクラウドから再生します。自作教材は端末の音声合成（TTS）を使います。録音した声は Gemini が聞いて、発音・イントネーション・流暢さを評価します。イヤホン推奨。マイクが使えない環境ではサンプル評価が表示されます。</p>
   </section>
 
   <!-- PRACTICE -->
@@ -254,10 +254,7 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
     <div class="rectime" id="recTime">0:00</div>
     <div class="meter"><i id="meter"></i></div>
     <div class="hint" id="recHint">お手本と同時に声に出して、そのまま続けてください。</div>
-    <div class="toggles" id="recOpts" style="justify-content:center;margin:0">
-      <button class="tg" id="optModel" aria-pressed="true">録音中にお手本を流す</button>
-    </div>
-    <div class="hint" id="recWarn" style="color:var(--warn)">スピーカーでお手本を流すと、お手本の音声まで「自分の声」として認識され、スコアが高く出ます。イヤホンを使うか、お手本をオフにしてください。</div>
+    <div class="hint" id="recWarn" style="color:var(--warn)">イヤホンを着けてください。お手本は録音に入らず、自分の声だけが評価されます。</div>
     <div class="row" id="recReadyRow">
       <button class="btn ghost" id="recCancel0">やめる</button>
       <button class="btn" id="recStart">● 録音を開始</button>
@@ -483,43 +480,36 @@ $('recStart').onclick=startRecording;
 $('recStop').onclick=()=>stopRecording(true);
 $('recCancel').onclick=()=>stopRecording(false);
 $('recCancel0').onclick=()=>{ $('recpanel').hidden=true; };
-R.playModel = LS.get('ss.recModel', true);
-$('optModel').onclick=e=>{ R.playModel=!R.playModel; LS.set('ss.recModel',R.playModel); syncRecOpts(); };
-function syncRecOpts(){ $('optModel').setAttribute('aria-pressed',R.playModel); $('recWarn').hidden=!R.playModel; }
+R.playModel = true;
+function syncRecOpts(){ $('recWarn').hidden=false; }
 function openRecordSheet(){
   stopPlay();
   $('recMode').textContent='シャドーイングを録音'; $('recTime').textContent='0:00'; $('meter').style.width='0';
   $('recHint').textContent=`「録音を開始」→ 3・2・1 のカウント後にお手本（${S.speed.toFixed(1)}×）が流れます。録音中は原稿が見えたまま、下のバーだけが残ります。終わったら「停止して評価」。`;
-  $('recReadyRow').hidden=false; $('recLiveRow').hidden=true; $('recOpts').hidden=false; syncRecOpts(); $('recpanel').hidden=false;
+  $('recReadyRow').hidden=false; $('recLiveRow').hidden=true; syncRecOpts(); $('recpanel').hidden=false;
 }
 async function startRecording(){
   stopPlay(); primeAudio(S.cur); R.transcript=[]; R.chunks=[]; R.pauses=0; R.audioUrl=null; R.preroll=0; R.t0=0;
   $('recReadyRow').hidden=true; $('recLiveRow').hidden=false; $('recpanel').classList.add('live');
-  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
   R.mode='demo';
   try{
     if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
       R.stream = await navigator.mediaDevices.getUserMedia({audio:true});
-      R.mode = SR ? 'full' : 'record';
+      R.mode = 'record';
     }
   }catch(e){ R.mode='demo'; R.micError = e && e.name ? e.name : String(e); }
   if(R.mode==='demo' && !R.micError) R.micError = window.isSecureContext===false ? 'InsecureContext' : 'NoMediaDevices';
   $('btnRec').classList.add('on');
-  $('recMode').textContent = R.mode==='full'?'録音中（マイク＋音声認識）': R.mode==='record'?'録音中（音声認識なし）':'録音デモ（マイク未使用）';
+  $('recMode').textContent = R.mode==='record'?'録音中':'録音デモ（マイク未使用）';
   $('recHint').textContent = R.mode==='demo' ? micReason()+' 停止後はサンプル評価を表示します。' : 'お手本と同時に声に出して、そのまま続けてください。';
   if(R.stream){
     try{ R.rec=new MediaRecorder(R.stream); R.rec.ondataavailable=e=>R.chunks.push(e.data); R.rec.start(250); }catch(e){}
     try{ R.ctx=new (window.AudioContext||window.webkitAudioContext)(); const src=R.ctx.createMediaStreamSource(R.stream); const an=R.ctx.createAnalyser(); an.fftSize=512; src.connect(an); const buf=new Uint8Array(an.fftSize);
       const tick=()=>{ an.getByteTimeDomainData(buf); let m=0; for(const v of buf) m=Math.max(m,Math.abs(v-128)); $('meter').style.width=Math.min(100,m*1.6)+'%'; R.raf=requestAnimationFrame(tick); }; tick(); }catch(e){}
-    if(R.mode==='full'){ R.recog=new SR(); R.recog.lang='en-US'; R.recog.continuous=true; R.recog.interimResults=true;
-      R.recog.onresult=ev=>{ for(let i=ev.resultIndex;i<ev.results.length;i++){ if(ev.results[i].isFinal){ R.transcript.push(ev.results[i][0].transcript); R.pauses++; } } };
-      R.recog.onend=()=>{ if($('btnRec').classList.contains('on')&&R.recog){ try{R.recog.start()}catch(e){} } };
-      try{R.recog.start()}catch(e){ R.mode='record'; }
-    }
   } else {
     const fake=()=>{ $('meter').style.width=(20+Math.random()*60)+'%'; R.raf=requestAnimationFrame(()=>setTimeout(fake,90)); }; fake();
   }
-  $('recOpts').hidden=true; $('recWarn').hidden=true;
+  $('recWarn').hidden=true;
   // 3-2-1 countdown: the recorder and recognizer are already running, so the first words are never clipped
   const recStart=performance.now(); const t=$('recTime'); t.classList.add('count');
   await new Promise(res=>{ let n=3; t.textContent=n; const iv=setInterval(()=>{ n--; if(n<=0||!$('btnRec').classList.contains('on')){ clearInterval(iv); res(); } else t.textContent=n; },700); });
@@ -532,7 +522,6 @@ function stopRecording(evaluate){
   const dur=R.t0?(performance.now()-R.t0)/1000:0;
   clearInterval(R.timer); cancelAnimationFrame(R.raf); $('meter').style.width='0';
   stopPlay();
-  const recog=R.recog; R.recog=null; if(recog){ try{recog.stop()}catch(e){} }
   const finish=()=>{
     if(R.stream){ R.stream.getTracks().forEach(t=>t.stop()); R.stream=null; }
     if(R.ctx){ try{R.ctx.close()}catch(e){} R.ctx=null; }
@@ -541,7 +530,7 @@ function stopRecording(evaluate){
     else setStatus('録音をやめました。');
   };
   if(R.rec&&R.rec.state!=='inactive'){ R.rec.onstop=()=>{ try{ R.blob=new Blob(R.chunks,{type:R.rec.mimeType||'audio/webm'}); R.audioUrl=URL.createObjectURL(R.blob); saveRecording(S.cur.id,R.blob,S.speed); }catch(e){} setTimeout(finish,400); }; R.rec.stop(); }
-  else setTimeout(finish,recog?500:0);
+  else setTimeout(finish,0);
 }
 
 
@@ -657,7 +646,7 @@ async function runAiAssessment(ev){
   const aiRoot=$('aiSection'), pRoot=$('pitchSection'); if(!aiRoot) return;
   let pcm16;
   try{ const ab=await R.blob.arrayBuffer(); pcm16=await decodeToMono(ab,16000); if(R.preroll>0){ const cut=Math.min(pcm16.pcm.length, Math.floor(R.preroll*pcm16.sr)); pcm16={pcm:pcm16.pcm.subarray(cut), sr:pcm16.sr, dur:pcm16.dur-R.preroll}; } }
-  catch(e){ aiRoot.innerHTML=`<h2>発音・イントネーション評価</h2><div class="note" style="margin:0">録音データを読み込めませんでした（${esc(String(e&&e.message||e))}）。</div>`; return; }
+  catch(e){ aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">録音データを読み込めませんでした（${esc(String(e&&e.message||e))}）。</div>`; return; }
   // pitch first (local, fast)
   try{ const mine={track:toSemitones(pitchTrack(pcm16.pcm,pcm16.sr)), dur:pcm16.dur}; const model=await modelPitch(S.cur); drawPitch(pRoot, mine, model, hasAudio(S.cur)?TL[S.cur.id].segs:null); }
   catch(e){ pRoot.innerHTML=`<div class="note" style="margin:0">ピッチ解析に失敗しました。</div>`; }
@@ -666,36 +655,29 @@ async function runAiAssessment(ev){
     const res=await fetch(SB_URL+'/functions/v1/assess',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON,'apikey':SB_ANON},
       body:JSON.stringify({audio:pcmToWavBase64(pcm16.pcm,pcm16.sr), mimeType:'audio/wav', sentences:S.cur.s.map(p=>p[0]), speed:S.speed})});
     const g=await res.json();
-    if(!res.ok||g.error){ aiRoot.innerHTML=`<h2>発音・イントネーション評価</h2><div class="note" style="margin:0">評価サーバのエラー：${esc(g.error||res.status)}${g.detail?'<br><code style="font-size:11px">'+esc(g.detail).slice(0,300)+'</code>':''}</div>`; return; }
+    if(!res.ok||g.error){ aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">評価サーバのエラー：${esc(g.error||res.status)}${g.detail?'<br><code style="font-size:11px">'+esc(g.detail).slice(0,300)+'</code>':''}</div>`; return; }
     renderAi(ev,g);
-  }catch(e){ aiRoot.innerHTML=`<h2>発音・イントネーション評価</h2><div class="note" style="margin:0">評価サーバに接続できませんでした（${esc(String(e&&e.message||e))}）。Claudeアプリ内の表示では外部通信が制限されます。Chromeで開いてお試しください。</div>`; }
+  }catch(e){  aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">評価サーバに接続できませんでした（${esc(String(e&&e.message||e))}）。Claudeアプリ内の表示では外部通信が制限されます。Chromeで開いてお試しください。</div><button class="btn ghost" style="margin-top:10px" onclick="runAiAssessment(S.lastEval)">評価をやり直す</button>`; }
 }
 const KIND={pronunciation:'発音',intonation:'イントネーション',rhythm:'リズム',linking:'リンキング',fluency:'流暢さ'};
 function renderAi(ev,g){
   const pct=v=>Math.max(0,Math.min(100,Math.round(v||0)));
   const bar=(l,v)=>`<div class="bar"><div class="l"><span>${l}</span><span>${pct(v)}</span></div><div class="tr"><i style="width:${pct(v)}%"></i></div></div>`;
-  $('aiSection').innerHTML=`<h2>発音・イントネーション評価 <span class="note" style="margin:0;font-weight:400">Gemini ${esc((g.meta&&g.meta.model||'').replace('gemini-',''))}${g.meta&&g.meta.ms?' ・ '+(g.meta.ms/1000).toFixed(1)+'秒':''}</span></h2>
-    ${g.leakage?`<div class="badge warn" style="margin-bottom:10px">お手本の音声が録音に混ざっています。イヤホンを使うと正確に評価できます。</div>`:''}
-    <div class="bars" style="margin-bottom:12px">${bar('発音（母音・子音・語の強勢）',g.pronunciation)}${bar('イントネーション・リズム',g.intonation)}${bar('流暢さ',g.fluency)}</div>
+  $('scoreBars').innerHTML=`${bar('発音（母音・子音・語の強勢）',g.pronunciation)}${bar('イントネーション・リズム',g.intonation)}${bar('流暢さ',g.fluency)}
+    <div class="note" style="margin-top:2px">${ev.speed.toFixed(1)}× ・ 録音 ${ev.dur.toFixed(1)}秒 ／ お手本 ${ev.modelDur.toFixed(1)}秒${g.meta&&g.meta.ms?' ・ 評価 '+(g.meta.ms/1000).toFixed(1)+'秒':''}</div>`;
+  const sc=pct(g.overall), r=52, c=2*Math.PI*r, col=ev.demo?'var(--muted)':sc>=80?'var(--good)':sc>=60?'var(--warn)':'var(--miss)';
+  const arc=$('ringArc'); if(arc){ arc.setAttribute('stroke-dasharray',`${c*sc/100} ${c}`); arc.setAttribute('stroke',col); } const num=$('ringNum'); if(num){ num.textContent=sc; num.setAttribute('font-size','30'); }
+  if(!ev.demo){ const h=history[S.cur.id]||[]; h.push({score:sc,speed:S.speed,at:ev.at}); history[S.cur.id]=h.slice(-20); LS.set('ss.hist',history); }
+  $('aiSection').innerHTML=`<h2>強化ポイント ${ev.demo?'':`<span class="note" style="margin:0;font-weight:400">Gemini ${esc((g.meta&&g.meta.model||'').replace('gemini-',''))}</span>`}</h2>
+    ${g.leakage?`<div class="badge warn" style="margin-bottom:10px">録音にお手本の音声が混ざっています。イヤホンが外れていないか確認してください。</div>`:''}
     ${g.good?`<div class="note" style="margin:0 0 10px;color:var(--good)">◎ ${esc(g.good)}</div>`:''}
     <ul class="points">${(g.points||[]).map(p=>`<li><span class="wd" style="font-family:var(--font-jp);font-size:12px;color:var(--accent);background:var(--accent-soft)">${KIND[p.kind]||p.kind}</span><div class="tp">${esc(p.title)}<small>${esc(p.detail)}</small></div></li>`).join('')}</ul>
-    ${g.transcript?`<div class="eyebrow" style="margin-top:12px">Geminiが聞き取った内容</div><div class="transcript" style="margin-top:4px">${esc(g.transcript)}</div>`:''}`;
-  // browser recognition becomes secondary once Gemini has answered: fold it into a collapsed block
-  const wsP=$('wsPoints'), wsT=$('wsTranscript');
-  if(wsP){ const det=document.createElement('details'); det.className='section'; det.innerHTML='<summary style="cursor:pointer;font-weight:700;font-size:13px">ブラウザ音声認識の参考情報（Chromeがリアルタイムで聞き取った語の一致。自動補正が入るため精度は低め）</summary>';
-    wsP.parentNode.insertBefore(det, wsP); const box=document.createElement('div'); box.style.cssText='display:grid;gap:12px;margin-top:12px'; det.appendChild(box); box.appendChild(wsP); if(wsT) box.appendChild(wsT); wsP.style.border='0'; wsP.style.padding='0'; if(wsT){ wsT.style.border='0'; wsT.style.padding='0'; } }
-  // overall score from Gemini replaces the word-match score
-  if(typeof g.overall==='number'){
-    const sc=pct(g.overall), ring=document.querySelector('#fb .ring'); if(ring){ const r=52,c=2*Math.PI*r; const col=sc>=80?'var(--good)':sc>=60?'var(--warn)':'var(--miss)';
-      ring.querySelectorAll('circle')[1].setAttribute('stroke-dasharray',`${c*sc/100} ${c}`); ring.querySelectorAll('circle')[1].setAttribute('stroke',col); ring.querySelector('text').textContent=sc; }
-    const h=history[S.cur.id]||[]; if(h.length){ h[h.length-1].score=sc; LS.set('ss.hist',history); }
-    const lbl=$('scoreLabel'); if(lbl) lbl.textContent='総合（Gemini評価）';
-  }
-  // word-level marks from Gemini on the script
+    ${g.transcript&&!ev.demo?`<div class="eyebrow" style="margin-top:12px">聞き取られた発話（言ったとおりに書き起こし）</div><div class="transcript" style="margin-top:4px">${esc(g.transcript)}</div>`:''}`;
+  // word-level marks on the script
   if(Array.isArray(g.words)&&g.words.length){ const miss=new Set(), unclear=new Set(); const counters={};
-    g.words.forEach(w=>{ const s=w.s|0; counters[s]=(counters[s]||0); const key=s+':'+counters[s]; counters[s]++; if(w.st==='missing'||w.st==='wrong') miss.add(key); else if(w.st==='unclear') unclear.add(key); });
-    const root=$('fbScript'); if(root){ renderScript(root, miss); root.querySelectorAll('.w').forEach(()=>{}); let wi={}; root.querySelectorAll('.sent').forEach(b=>{ const i=+b.dataset.i; let k=0; b.querySelectorAll('.w').forEach(sp=>{ const toks=tokenize(sp.textContent).length; for(let j=0;j<toks;j++){ if(unclear.has(i+':'+k)) sp.classList.add('unclear'); k++; } }); });
-      const h2=root.parentElement.querySelector('h2'); if(h2) h2.textContent='スクリプト（赤＝抜け・誤り、黄＝不明瞭 ― Gemini判定）'; }
+    g.words.forEach(w=>{ const si=w.s|0; counters[si]=(counters[si]||0); const key=si+':'+counters[si]; counters[si]++; if(w.st==='missing'||w.st==='wrong') miss.add(key); else if(w.st==='unclear') unclear.add(key); });
+    const root=$('fbScript'); if(root){ renderScript(root, miss); root.querySelectorAll('.sent').forEach(b=>{ const i=+b.dataset.i; let k=0; b.querySelectorAll('.w').forEach(sp=>{ const toks=tokenize(sp.textContent).length; for(let j=0;j<toks;j++){ if(unclear.has(i+':'+k)) sp.classList.add('unclear'); k++; } }); });
+      const lg=$('scriptLegend'); if(lg) lg.textContent='赤＝抜け・誤り、黄＝不明瞭'; }
   }
 }
 
@@ -715,73 +697,51 @@ function tip(w,next){
 }
 function evaluateAttempt(dur){
   const sc=S.cur; const scriptWords=[]; sc.s.forEach((p,i)=>tokenize(p[0]).forEach((w,j)=>scriptWords.push({w,key:i+':'+j})));
-  let hits, demo=false, transcript='', pauses=R.pauses;
   const modelDur = (hasAudio(sc)&&S.engine==='file') ? TL[sc.id].dur/S.speed : (S.modelDur[sc.id+'@'+S.speed] || scriptWords.length/(2.6*S.speed));
-  if(R.mode==='full' && R.transcript.length){
-    transcript=R.transcript.join(' ').trim(); hits=lcsHits(scriptWords.map(x=>x.w), tokenize(transcript));
-  } else {
-    demo=true; let seed=0; for(const c of sc.id) seed+=c.charCodeAt(0);
-    hits=scriptWords.map((x,i)=>!((i*7+seed)%13===0 || (FUNC.has(x.w)&&(i+seed)%6===0)));
-    dur=modelDur*1.07; pauses=2;
-    transcript=scriptWords.filter((x,i)=>hits[i]).map(x=>x.w).join(' ');
+  const demo = R.mode!=='record' || !R.blob;
+  let sample=null;
+  if(demo){ // sample numbers so the screen can be shown where no microphone exists
+    let seed=0; for(const c of sc.id) seed+=c.charCodeAt(0);
+    const hits=scriptWords.map((x,i)=>!((i*7+seed)%13===0));
+    const words=scriptWords.map((x,i)=>({w:x.w,s:+x.key.split(':')[0],st:hits[i]?'ok':'missing'}));
+    sample={overall:72,pronunciation:70,intonation:66,fluency:80,words,good:'文末まで声が途切れず、全体のテンポはお手本に近いです。',
+      points:[{kind:'intonation',title:'文頭の語を高く始める',detail:'"Attention" のように文頭は高めに入り、文末に向けて下げると英語らしい抑揚になります。'},{kind:'linking',title:'語末の子音を次の母音へつなぐ',detail:'"begin in" は「ビギニン」のように1語で発音します。'},{kind:'pronunciation',title:'語末の子音を落とさない',detail:'"pass" "ready" の最後の音まで言い切ります。'}],
+      transcript:'(sample)'};
   }
-  const matched=hits.filter(Boolean).length; const recall=matched/scriptWords.length;
-  const recognizedN = demo ? matched : tokenize(transcript).length;
-  const precision = recognizedN ? matched/recognizedN : 0;          // extra / wrong words lower this
-  const acc = (precision+recall) ? 2*precision*recall/(precision+recall) : 0;
-  const ratio=dur/modelDur; const speedScore=Math.max(0,1-Math.abs(ratio-1)*1.5);
-  const fluency=Math.max(0,1-Math.max(0,pauses-sc.s.length)*0.08);
-  // accuracy dominates (70%) and is curved: 80% word match with perfect pace scores about 79, 60% about 56
-  const score=Math.round((Math.pow(acc,1.6)*0.7+speedScore*0.15+fluency*0.15)*100);
-  const engine = demo ? 'sample' : 'webspeech';
-  const missed=[]; scriptWords.forEach((x,i)=>{ if(!hits[i]) missed.push({...x,next:scriptWords[i+1]?.w}); });
-  const ev={score,recall,precision,acc,matched,recognizedN,total:scriptWords.length,speedScore,fluency,ratio,pauses,missed,demo,engine,playedModel:R.playModel,transcript,speed:S.speed,dur,modelDur,at:Date.now()};
-  if(!demo){ const h=history[sc.id]||[]; h.push({score,speed:S.speed,at:ev.at}); history[sc.id]=h.slice(-20); LS.set('ss.hist',history); }
+  const ev={demo, sample, total:scriptWords.length, speed:S.speed, dur, modelDur, ratio:dur/modelDur, at:Date.now()};
   S.lastEval=ev; return ev;
 }
-function showFeedback(ev){
-  const miss=new Set(ev.missed.map(m=>m.key)); const pct=v=>Math.round(v*100);
-  const r=52, c=2*Math.PI*r;
-  const byWord={}; ev.missed.forEach(m=>{ (byWord[m.w]=byWord[m.w]||{...m,n:0}).n++; });
-  const points=Object.values(byWord).sort((a,b)=>b.n-a.n||(FUNC.has(a.w)?1:0)-(FUNC.has(b.w)?1:0)).slice(0,5);
-  const color = ev.demo ? 'var(--muted)' : ev.score>=80?'var(--good)':ev.score>=60?'var(--warn)':'var(--miss)';
-  $('fb').innerHTML=`
-   ${ev.demo
-     ? `<div class="section" style="border-color:var(--warn)"><h2>これはサンプル評価です</h2><div class="note" style="margin:0">${micReason()} この数値は評価画面の見本で、あなたの発話は判定していません。履歴にも保存されません。</div></div>`
-     : `<div class="section"><h2>判定方式</h2><div class="note" style="margin:0">ブラウザの音声認識（Web Speech API）で認識した語とスクリプトを照合。認識 ${ev.recognizedN} 語のうち一致 ${ev.matched} 語 ／ スクリプト ${ev.total} 語。${ev.playedModel?'<b style="color:var(--warn)">録音中にお手本を流していたため、スピーカー再生ならお手本の音声も認識に含まれている可能性があります。</b>':'お手本なしで録音（自分の声のみ）。'}</div></div>`}
-   <div class="scorecard">
-     <svg class="ring" viewBox="0 0 120 120" aria-label="総合スコア ${ev.score}">
+function ringSvg(score, label, color){ const r=52,c=2*Math.PI*r; const sc=score==null?0:score;
+  return `<svg class="ring" viewBox="0 0 120 120" aria-label="総合スコア ${score==null?'評価中':score}">
        <circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--surface2)" stroke-width="10"/>
-       <circle cx="60" cy="60" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${c*ev.score/100} ${c}" transform="rotate(-90 60 60)"/>
-       <text x="60" y="58" text-anchor="middle" font-size="30">${ev.score}</text>
+       <circle id="ringArc" cx="60" cy="60" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${c*sc/100} ${c}" transform="rotate(-90 60 60)"/>
+       <text id="ringNum" x="60" y="58" text-anchor="middle" font-size="${score==null?22:30}">${score==null?'…':score}</text>
        <text x="60" y="78" text-anchor="middle" font-size="11" fill="var(--muted)">/100</text>
-       <text id="scoreLabel" x="60" y="112" text-anchor="middle" font-size="9" fill="var(--muted)">${ev.demo?"サンプル":"総合（語の一致）"}</text>
-     </svg>
-     <div class="bars">
-       <div class="bar"><div class="l"><span>一致率（再現 ${pct(ev.recall)}% × 的中 ${pct(ev.precision)}%）</span><span>${pct(ev.acc)}%</span></div><div class="tr"><i style="width:${pct(ev.acc)}%"></i></div></div>
-       <div class="bar"><div class="l"><span>速度（お手本との差）</span><span>${ev.ratio>1?'+':''}${Math.round((ev.ratio-1)*100)}%</span></div><div class="tr"><i style="width:${pct(ev.speedScore)}%"></i></div></div>
-       <div class="bar"><div class="l"><span>流暢さ（途切れ）</span><span>${ev.pauses}回</span></div><div class="tr"><i style="width:${pct(ev.fluency)}%"></i></div></div>
-       <div class="note" style="margin-top:2px">${ev.speed.toFixed(1)}× ・ 録音 ${ev.dur.toFixed(1)}秒 ／ お手本 ${ev.modelDur.toFixed(1)}秒</div>
+       <text id="scoreLabel" x="60" y="112" text-anchor="middle" font-size="9" fill="var(--muted)">${label}</text>
+     </svg>`; }
+function showFeedback(ev){
+  $('fb').innerHTML=`
+   ${ev.demo?`<div class="section" style="border-color:var(--warn)"><h2>これはサンプル評価です</h2><div class="note" style="margin:0">${micReason()} 下の数値と指摘は画面の見本で、あなたの発話は判定していません。履歴にも保存されません。</div></div>`:''}
+   <div class="scorecard">
+     ${ringSvg(ev.demo?ev.sample.overall:null, ev.demo?'サンプル':'Gemini評価', 'var(--muted)')}
+     <div class="bars" id="scoreBars"><div class="note" style="margin:0">${ev.demo?'':'Gemini が録音を聞いて評価しています… 通常5〜10秒'}</div>
+       <div class="note" style="margin-top:2px">${ev.speed.toFixed(1)}× ・ 録音 ${ev.dur.toFixed(1)}秒 ／ お手本 ${ev.modelDur.toFixed(1)}秒（${ev.ratio>1?'+':''}${Math.round((ev.ratio-1)*100)}%）</div>
      </div>
    </div>
-   ${ev.demo?'':`<div class="section" id="aiSection"><h2>発音・イントネーション評価</h2><div class="note" style="margin:0">Gemini が録音を聞いて評価しています… 通常5〜10秒</div></div>
-   <div class="section"><h2>イントネーション曲線</h2><div id="pitchSection"><div class="note" style="margin:0">解析中…</div></div></div>`}
-   <div class="section" id="wsPoints"><h2>強化ポイント（語の一致 ― ブラウザ音声認識）</h2>
-     ${points.length?`<ul class="points">${points.map(p=>{const t=tip(p.w,p.next);return `<li><span class="wd">${esc(p.w)}</span><div class="tp">${t[0]}${p.n>1?`（${p.n}回）`:''}<small>${t[1]}</small></div></li>`}).join('')}</ul>`:'<div class="note" style="margin:0">聞き取れなかった語はありません。速度を0.1上げて挑戦しましょう。</div>'}
-   </div>
-   <div class="section"><h2>スクリプト（赤＝認識されなかった語）</h2><div class="script" id="fbScript"></div></div>
-   ${ev.transcript?`<div class="section" id="wsTranscript"><h2>${ev.demo?'認識テキスト（例）':'ブラウザ音声認識のテキスト（参考）'}</h2><div class="transcript">${esc(ev.transcript)}</div></div>`:''}
+   <div class="section" id="aiSection"><h2>強化ポイント</h2><div class="note" style="margin:0">${ev.demo?'':'評価を待っています…'}</div></div>
+   <div class="section"><h2>スクリプト <span class="note" style="margin:0;font-weight:400" id="scriptLegend">${ev.demo?'赤＝抜け・誤り':'評価が返ると、抜け・誤り（赤）と不明瞭（黄）に色が付きます'}</span></h2><div class="script" id="fbScript"></div></div>
+   ${ev.demo?'':`<div class="section"><h2>イントネーション曲線</h2><div id="pitchSection"><div class="note" style="margin:0">解析中…</div></div></div>`}
    <div class="actions">
      <div class="section" id="recPanel"></div>
      <div class="row"><button class="btn ghost" id="fbModel">お手本をもう一度</button><button class="btn" id="fbRetry">もう一度録音</button></div>
      <button class="btn ghost" id="fbSlow">0.1 遅くして練習する</button>
    </div>`;
-  const root=$('fbScript'); root.id='fbScript'; renderScript(root, miss);
+  renderScript($('fbScript'), null);
   $('fbModel').onclick=()=>{show('view-practice'); S.loopsDone=0; playFrom(0,false);};
   $('fbRetry').onclick=()=>{show('view-practice'); openRecordSheet();};
   $('fbSlow').onclick=()=>{setSpeed(S.speed-0.1); show('view-practice'); S.loopsDone=0; playFrom(0,false);};
   renderRecPanel($('recPanel'), ev.demo);
-  if(!ev.demo && R.blob) runAiAssessment(ev);
+  if(ev.demo) renderAi(ev, ev.sample); else runAiAssessment(ev);
   show('view-feedback');
 }
 
