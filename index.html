@@ -529,7 +529,7 @@ function renderLib(){
     const b=document.createElement('button'); b.className='card';
     b.innerHTML=`<div class="t">${esc(sc.title)}</div>
       <div class="score ${a.length?'':'none'}">${a.length?`${a[0].score}<small>前回 / ${a.length}回</small>`:'未挑戦'}</div>
-      <div class="m"><span class="pill lv">${esc(sc.level)}</span><span class="pill">${esc(sc.type||CAT_NAME[sc.cat]||'')}</span><span class="pill st-${st}">${ST_LABEL[st]}</span><span>${words}語・${sc.s.length}文</span></div>`;
+      <div class="m"><span class="pill lv">${esc(sc.level)}</span><span class="pill">${esc(sc.type||CAT_NAME[sc.cat]||'')}</span><span class="pill st-${st}">${ST_LABEL[st]}</span><span>${voiceLabel(sc)}</span><span>${words}語</span></div>`;
     b.onclick=()=>openPractice(sc.id);
     lib.appendChild(b);
   });
@@ -565,7 +565,7 @@ function openPractice(id){
   S.cur = allScripts().find(x=>x.id===id); S.idx=0; S.loopsDone=0; S.lastEval=null;
   $('pTitle').textContent=S.cur.title;
   const words = S.cur.s.reduce((n,p)=>n+tokenize(p[0]).length,0);
-  $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${words}語</span><span class="pill">${S.cur.s.length}文</span>`;
+  $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${voiceLabel(S.cur)}</span><span class="pill">${words}語・${S.cur.s.length}文</span>`;
   primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn();
   renderScript($('script'), null);
   setStatus('▶ でお手本を再生。文をタップするとその文だけ再生します。');
@@ -600,7 +600,12 @@ $('spdDown').onclick=()=>setSpeed(S.speed-0.1); $('spdUp').onclick=()=>setSpeed(
 $('presets').onclick=e=>{const b=e.target.closest('button'); if(b) setSpeed(+b.dataset.s)};
 
 /* ---------- Playback engine: pre-rendered audio (built-in scripts) with TTS fallback (user scripts) ---------- */
-const TL = window.CONTENT_TL || {};
+const TL = Object.assign({}, window.CONTENT_TL || {});
+const CLOUD = { map: LS.get('ss.cloudaudio',{}) };   // id -> {url, voice, accent, gender, timeline}
+Object.entries(CLOUD.map).forEach(([id,c])=>{ TL[id]=c.timeline; });
+async function loadCloudAudio(){ try{ const rows=await sb('shadowing_audio?select=id,url,voice,accent,gender,timeline'); const m={}; rows.forEach(r=>{ m[r.id]={url:r.url,voice:r.voice,accent:r.accent,gender:r.gender,timeline:r.timeline}; TL[r.id]=r.timeline; }); CLOUD.map=m; LS.set('ss.cloudaudio',m); }catch(e){} }
+const ACCENT_LABEL={US:'🇺🇸 米',UK:'🇬🇧 英',AU:'🇦🇺 豪'};
+function voiceLabel(sc){ const c=CLOUD.map[sc.id]; if(c) return (ACCENT_LABEL[c.accent]||c.accent)+(c.gender==='m'?' 男性':' 女性'); return sc.voice==='m'?'🇺🇸 男性':'🇺🇸 女性'; }
 const GAP = 0.35;
 const audio = new Audio(); audio.preload = 'auto';
 try { audio.preservesPitch = true; audio.mozPreservesPitch = true; } catch (e) {}
@@ -618,7 +623,7 @@ const inClaude = /claude/i.test(location.hostname);   // the claude.ai viewer on
 const hostedOnSupabase = /supabase\.co$/i.test(location.hostname);   // served by the `app` Edge Function, which also serves the audio
 const HOSTED_AUDIO = hostedOnSupabase ? location.pathname.replace(/\/$/,'') + '/audio/' : null;
 let useCloud = !inClaude && !hostedOnSupabase;
-function audioSrc(sc){ return (HOSTED_AUDIO || (useCloud ? CLOUD_BASE : 'audio/')) + sc.id + '.mp3'; }
+function audioSrc(sc){ const c=CLOUD.map[sc.id]; if(c && !inClaude) return c.url; return (HOSTED_AUDIO || (useCloud ? CLOUD_BASE : 'audio/')) + sc.id + '.mp3'; }
 audio.addEventListener('error', ()=>{ if(useCloud){ useCloud=false; const was=S.cur; if(was&&hasAudio(was)){ audio.src=audioSrc(was); audio.load(); setStatus('クラウド音声に接続できないため、同梱の音声に切り替えました。'); } } });
 function primeAudio(sc){ // call inside a user gesture so later play() calls are allowed on iOS
   if(!hasAudio(sc)) return; const src = audioSrc(sc);
@@ -627,7 +632,7 @@ function primeAudio(sc){ // call inside a user gesture so later play() calls are
 }
 function playFrom(i, single){
   stopPlay(); S.playing=true; $('btnPlay').textContent='❚❚'; const my=++seq; document.querySelectorAll('.parrot').forEach(p=>p.classList.add('talk'));
-  setStatus((single?`${i+1}文目を再生中`:`再生中 ${S.speed.toFixed(1)}×`)+(useFile()?(useCloud?'  ☁ ストリーミング':'  同梱音声'):(voice?'  端末音声: '+deviceVoiceName():'')));
+  setStatus((single?`${i+1}文目を再生中`:`再生中 ${S.speed.toFixed(1)}×`)+(useFile()?(CLOUD.map[S.cur.id]&&!inClaude?'  ☁ '+voiceLabel(S.cur):(useCloud?'  ☁ ストリーミング':'  同梱音声')):(voice?'  端末音声: '+deviceVoiceName():'')));
   if(useFile()) playAudioFrom(i, single, my); else playTTSFrom(i, single, my);
 }
 function finishPlay(msg){ S.playing=false; document.querySelectorAll('.parrot').forEach(p=>p.classList.remove('talk')); $('btnPlay').textContent='▶'; cancelAnimationFrame(raf); clearWords(); setStatus(msg); }
@@ -858,7 +863,7 @@ function toSemitones(track){ const v=track.filter(p=>p.hz).map(p=>p.hz).sort((a,
   return track.map(p=>({t:p.t, st: p.hz? 12*Math.log2(p.hz/med) : null})); }
 const modelPitchCache = {};
 async function modelPitch(sc){
-  if(!hasAudio(sc) || !(useCloud||HOSTED_AUDIO)) return null;
+  if(!hasAudio(sc) || !(useCloud||HOSTED_AUDIO||CLOUD.map[sc.id])) return null;
   if(modelPitchCache[sc.id]) return modelPitchCache[sc.id];
   try{ const r=await fetch(audioSrc(sc)); if(!r.ok) return null; const {pcm,sr,dur}=await decodeToMono(await r.arrayBuffer(),16000);
     return modelPitchCache[sc.id]={track:toSemitones(pitchTrack(pcm,sr)), dur}; }catch(e){ return null; }
@@ -1040,6 +1045,7 @@ function toast(t){ const d=document.createElement('div'); d.className='toast'; d
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 (async function boot(){
+  loadCloudAudio();
   if(U.cur && curUser()){ renderHome(); show('view-library'); await loadUsers(); await loadAttempts(); renderHome(); }
   else { show('view-users'); renderUsers(); await loadUsers(); renderUsers(); if(U.list.length===1 && !U.cur){ /* single learner: no need to ask */ selectUser(U.list[0].id); } }
 })();
