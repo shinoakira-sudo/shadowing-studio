@@ -52,6 +52,34 @@ h1,h2,h3{margin:0;font-family:var(--font-ui);text-wrap:balance}
 .brand small{display:block;font-family:var(--font-jp);font-weight:500;font-size:12px;color:var(--muted);letter-spacing:.02em}
 .eyebrow{font-family:var(--font-ui);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 
+/* Library / home */
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;font-family:var(--font-ui);font-weight:800;font-size:15px;display:grid;place-items:center;flex:0 0 auto}
+.avatar.big{width:44px;height:44px;font-size:18px;grid-row:1/3}
+.card.ucard{grid-template-columns:auto 1fr;align-items:center}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.sw{width:26px;height:26px;border-radius:50%;border:3px solid transparent}
+.sw.on{border-color:var(--fg)}
+.today{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-top:4px}
+.todaygrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat .num{font-family:var(--font-ui);font-weight:800;font-size:24px;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:2px}
+.stat .num small{font-size:11px;font-weight:600;color:var(--muted);margin-left:2px}
+.dots{display:flex;gap:5px;margin:12px 0 4px}
+.dot{flex:1;height:8px;border-radius:999px;background:var(--surface2)}
+.dot.on{background:var(--accent)}
+.dot.today{outline:2px solid var(--accent-soft);outline-offset:1px}
+.recbtn{margin-top:10px;width:100%;text-align:left;background:var(--accent);color:var(--accent-fg);border-radius:14px;padding:12px 14px;display:grid;gap:2px}
+.recbtn b{font-family:var(--font-ui);font-size:16px}
+.recbtn small{font-size:12px;opacity:.9}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chips .tg{padding:5px 10px;font-size:12px}
+.chips .cnt{opacity:.6;font-weight:600;margin-left:2px}
+.pill.st-new{background:var(--surface2)}
+.pill.st-review{background:var(--miss-soft);color:var(--miss)}
+.pill.st-almost{background:#FFF1D6;color:#7A4B00}
+.pill.st-done{background:var(--accent-soft);color:var(--accent)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .pill.st-almost{background:#3E2E12;color:#F0B35A}}
+:root[data-theme="dark"] .pill.st-almost{background:#3E2E12;color:#F0B35A}
+.card.hcard .m span{font-variant-numeric:tabular-nums}
 /* Library */
 .list{display:flex;flex-direction:column;gap:12px;margin-top:8px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;text-align:left;width:100%;display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center}
@@ -168,15 +196,43 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
 </style>
 
 <div class="app">
-  <!-- LIBRARY -->
+  <!-- USERS -->
+  <section id="view-users" hidden>
+    <div class="topbar">
+      <div class="brand">Shadowing Studio<small>だれが練習しますか？</small></div>
+    </div>
+    <div class="list" id="userList"></div>
+    <form class="form" id="userForm" style="margin-top:14px">
+      <div class="eyebrow">新しいユーザー</div>
+      <div class="row"><input type="text" id="uName" placeholder="名前（例: Akira）" maxlength="20" required><button class="btn" type="submit" style="flex:0 0 auto">追加</button></div>
+      <div class="swatches" id="uColors"></div>
+      <div class="note" style="margin-top:4px">記録はクラウド（Supabase）に保存され、別の端末でも同じ名前を選べば続きから練習できます。</div>
+    </form>
+  </section>
+
+  <!-- LIBRARY (home) -->
   <section id="view-library">
     <div class="topbar">
       <div class="brand">Shadowing Studio<small>TOEIC Part 3・4 レベルの音声でシャドーイング</small></div>
+      <button class="avatar" id="btnUser" aria-label="ユーザーを切り替え">A</button>
     </div>
-    <div class="eyebrow">教材</div>
+    <div class="today" id="today"></div>
+    <div class="eyebrow" style="margin-top:18px">教材を選ぶ</div>
+    <div class="chips" id="catChips"></div>
+    <div class="chips" id="lvChips"></div>
+    <div class="chips" id="stChips"></div>
     <div class="list" id="lib"></div>
     <button class="addbtn" id="goAdd">＋ テキストから教材を登録</button>
     <p class="note">付属教材は事前生成した音声（ニューラルTTS）をクラウドから再生します。自作教材は端末の音声合成（TTS）を使います。録音した声は Gemini が聞いて、発音・イントネーション・流暢さを評価します。イヤホン推奨。マイクが使えない環境ではサンプル評価が表示されます。</p>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="view-history" hidden>
+    <div class="topbar">
+      <button class="back" id="backLib3" aria-label="ホームへ戻る">←</button>
+      <h1>実施履歴</h1>
+    </div>
+    <div id="histBody"></div>
   </section>
 
   <!-- PRACTICE -->
@@ -266,72 +322,163 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
   </div>
 </div>
 
+<script src="content.js"></script>
 <script>
 /* ---------- Data ---------- */
-const BUILTIN = [
- {id:'b1',title:'空港の搭乗案内',type:'アナウンス',level:'TOEIC 600',
-  s:[['Attention, passengers on Flight 482 to Chicago.','シカゴ行き482便をご利用のお客様にご案内いたします。'],
-     ['Boarding will begin in approximately fifteen minutes at Gate 23.','ご搭乗は約15分後、23番ゲートより開始いたします。'],
-     ['Please have your boarding pass and a valid photo ID ready.','搭乗券と写真付き身分証をお手元にご用意ください。'],
-     ['Passengers traveling with small children or those requiring special assistance are welcome to board first.','小さなお子様連れのお客様、またお手伝いが必要なお客様は優先してご搭乗いただけます。'],
-     ['Thank you for choosing Northwind Airlines.','ノースウィンド航空をご利用いただきありがとうございます。']]},
- {id:'b2',title:'取引先からの留守番電話',type:'留守電',level:'TOEIC 730',
-  s:[["Hi, this is Karen Mitchell from Brightline Office Supplies.",'こんにちは、ブライトライン・オフィスサプライのカレン・ミッチェルです。'],
-     ["I'm calling about the order you placed on Tuesday.",'火曜日にいただいたご注文の件でお電話しました。'],
-     ['Unfortunately, the ergonomic chairs you requested are currently out of stock.','あいにく、ご希望のエルゴノミックチェアは現在在庫切れです。'],
-     ['We expect a new shipment by the end of next week.','来週末までには新たに入荷する見込みです。'],
-     ["If you'd like, we can send a similar model at the same price.",'よろしければ、同価格で類似モデルをお送りすることもできます。'],
-     ["Please call me back at extension 214 to let us know how you'd like to proceed.",'ご希望をお知らせいただくため、内線214まで折り返しご連絡ください。']]},
- {id:'b3',title:'朝のミーティング冒頭',type:'社内連絡',level:'TOEIC 730',
-  s:[['Good morning, everyone.','皆さん、おはようございます。'],
-     ["Before we begin today's meeting, I'd like to remind you that the quarterly sales report is due this Friday.",'本日の会議を始める前に、四半期売上報告の締め切りが今週金曜日であることを改めてお伝えします。'],
-     ['Please submit your figures to the finance department by noon.','数値は正午までに財務部へ提出してください。'],
-     ['Also, the parking lot on the north side will be closed for repaving starting Monday.','また、北側の駐車場は月曜日から舗装工事のため閉鎖されます。'],
-     ['Employees are encouraged to use the garage across the street during that time.','その間は、通りの向かいにある駐車場のご利用をお願いします。']]},
- {id:'b4',title:'フィットネスクラブのラジオ広告',type:'広告',level:'TOEIC 860',
-  s:[['Looking for a new place to work out?','新しい運動の場所をお探しですか？'],
-     ['Riverside Fitness Center is now offering a free two-week trial for new members.','リバーサイド・フィットネスセンターでは、新規会員向けに2週間の無料体験を実施中です。'],
-     ['Our facility features modern equipment, a heated swimming pool, and group classes led by certified instructors.','当施設には最新の設備、温水プール、認定インストラクターによるグループレッスンがあります。'],
-     ['Visit our website or stop by the front desk to sign up.','お申し込みはウェブサイトから、またはフロントまでお越しください。'],
-     ['Hurry, this offer ends on March 31st.','お急ぎください。この特典は3月31日までです。']]}
-];
+// Built-in scripts and their audio timelines come from content.js (window.CONTENT / window.CONTENT_TL)
+const BUILTIN = Array.isArray(window.CONTENT) ? window.CONTENT : [];
+const CATS = [['air','空港・機内'],['store','店内・施設'],['vm','留守電・伝言'],['mtg','社内連絡・会議'],['ad','広告・CM'],['news','ニュース・天気・交通'],['tour','ツアー・施設案内'],['event','イベント・講演'],['phone','電話・自動音声'],['talk','説明・トレーニング'],['user','自作']];
+const CAT_NAME = Object.fromEntries(CATS);
 const LS = {get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 let userScripts = LS.get('ss.user',[]);
-let history = LS.get('ss.hist',{});
-const allScripts = () => [...BUILTIN,...userScripts];
+const allScripts = () => [...BUILTIN,...userScripts.map(u=>({...u,cat:'user'}))];
 
+/* ---------- Users & attempts (Supabase REST, cached locally) ---------- */
+const SB_URL = 'https://hzsgkeuiugvftotrphki.supabase.co';
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6c2drZXVpdWd2ZnRvdHJwaGtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMTY1OTAsImV4cCI6MjEwNDU5MjU5MH0.q5ewSFfVnrQX23BA4r_2DBPPruNpKl_sDk5EL95Qso4';
+const SB_H = {'apikey':SB_ANON,'Authorization':'Bearer '+SB_ANON,'Content-Type':'application/json'};
+async function sb(path, opt={}){ const r=await fetch(SB_URL+'/rest/v1/'+path,{...opt,headers:{...SB_H,...(opt.headers||{})}}); if(!r.ok) throw new Error('Supabase '+r.status+' '+(await r.text()).slice(0,200)); return r.status===204?null:r.json(); }
+const U = { list: LS.get('ss.users',[]), cur: LS.get('ss.uid',null), attempts: [], online:true };
+const COLORS = ['#0C7C7A','#C4452E','#2E6FB5','#7A4DB5','#C27A00','#2E8B57','#B5366F','#4B5563'];
+function curUser(){ return U.list.find(u=>u.id===U.cur)||null; }
+async function loadUsers(){ try{ U.list=await sb('shadowing_users?select=*&order=created_at'); LS.set('ss.users',U.list); U.online=true; }catch(e){ U.online=false; } return U.list; }
+async function loadAttempts(){ if(!U.cur) return; U.attempts=LS.get('ss.att.'+U.cur,[]);
+  try{ const rows=await sb(`shadowing_attempts?select=id,script_id,score,pronunciation,intonation,fluency,speed,duration_sec,created_at&user_id=eq.${U.cur}&order=created_at.desc&limit=2000`);
+    U.attempts=rows.map(r=>({id:r.id,sid:r.script_id,score:r.score,p:r.pronunciation,i:r.intonation,f:r.fluency,speed:+r.speed,dur:+r.duration_sec,at:+new Date(r.created_at)})); LS.set('ss.att.'+U.cur,U.attempts); U.online=true; await flushQueue(); }catch(e){ U.online=false; } }
+async function flushQueue(){ const q=LS.get('ss.queue',[]); if(!q.length) return; const rest=[]; for(const row of q){ try{ await sb('shadowing_attempts',{method:'POST',body:JSON.stringify(row),headers:{Prefer:'return=minimal'}}); }catch(e){ rest.push(row); } } LS.set('ss.queue',rest); }
+async function saveAttempt(ev,g){
+  if(!U.cur) return;
+  const row={user_id:U.cur, script_id:S.cur.id, script_title:S.cur.title, score:g.overall|0, pronunciation:g.pronunciation|0, intonation:g.intonation|0, fluency:g.fluency|0, speed:S.speed, duration_sec:Math.round(ev.dur*10)/10, points:g.points||null, transcript:g.transcript||null};
+  const local={id:'local-'+Date.now(), sid:row.script_id, score:row.score, p:row.pronunciation, i:row.intonation, f:row.fluency, speed:row.speed, dur:row.duration_sec, at:Date.now()};
+  U.attempts.unshift(local); LS.set('ss.att.'+U.cur,U.attempts);
+  try{ await sb('shadowing_attempts',{method:'POST',body:JSON.stringify(row),headers:{Prefer:'return=minimal'}}); U.online=true; }
+  catch(e){ U.online=false; const q=LS.get('ss.queue',[]); q.push(row); LS.set('ss.queue',q); toast('クラウドに保存できなかったため、端末に保存しました（次回接続時に送信）'); }
+}
+const attemptsFor = sid => U.attempts.filter(a=>a.sid===sid);   // newest first
+function statusOf(sid){ const a=attemptsFor(sid); if(!a.length) return 'new'; if(a.length>=2 && a[0].score>=80 && a[1].score>=80) return 'done'; if(a[0].score>=80) return 'almost'; return 'review'; }
+const ST_LABEL={new:'未着手',review:'要復習',almost:'あと1回で定着',done:'定着'};
+const dayKey = t => { const d=new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+function streak(){ const days=new Set(U.attempts.map(a=>dayKey(a.at))); let n=0; const d=new Date(); if(!days.has(dayKey(d))) d.setDate(d.getDate()-1); while(days.has(dayKey(d))){ n++; d.setDate(d.getDate()-1); } return n; }
+function recommend(){
+  const list=allScripts(); const now=Date.now(), day=86400000;
+  // 1) 要復習 whose last attempt is at least a day old (sleep on it, then retry)
+  const due=list.filter(sc=>statusOf(sc.id)==='review' && now-attemptsFor(sc.id)[0].at>=day).sort((a,b)=>attemptsFor(a.id)[0].score-attemptsFor(b.id)[0].score);
+  if(due.length) return {sc:due[0], why:'要復習。前回 '+attemptsFor(due[0].id)[0].score+' 点。一晩おいての再挑戦です'};
+  // 2) あと1回で定着, 1+ day old
+  const almost=list.filter(sc=>statusOf(sc.id)==='almost' && now-attemptsFor(sc.id)[0].at>=day);
+  if(almost.length) return {sc:almost[0], why:'もう一度 80 点以上で定着になります'};
+  // 3) 未着手: prefer the level the learner is doing well at, then next level up
+  const fresh=list.filter(sc=>statusOf(sc.id)==='new' && sc.cat!=='user');
+  if(fresh.length){ const recent=U.attempts.slice(0,10); const avg=recent.length?recent.reduce((n,a)=>n+a.score,0)/recent.length:0;
+    const pref= avg>=85?'TOEIC 860':avg>=70?'TOEIC 730':'TOEIC 600'; const pick=fresh.find(sc=>sc.level===pref)||fresh[0]; return {sc:pick, why:'未着手の教材。'+pick.level+' レベル'}; }
+  // 4) everything attempted: weakest average
+  const scored=list.map(sc=>({sc,avg:attemptsFor(sc.id).reduce((n,a)=>n+a.score,0)/Math.max(1,attemptsFor(sc.id).length)})).sort((a,b)=>a.avg-b.avg);
+  return scored.length?{sc:scored[0].sc, why:'平均点がいちばん低い教材です'}:null;
+}
+
+/* ---------- State ---------- */
 /* ---------- State ---------- */
 const S = {cur:null, engine: LS.get('ss.engine','file'), speed:1.0, loop:0 /*0=∞*/, sentMode:false, blind:false, ja:true, idx:0, playing:false, loopsDone:0, modelDur:{}, playStart:0, lastEval:null};
 
 /* ---------- Views ---------- */
 const $ = id => document.getElementById(id);
-const views = ['view-library','view-practice','view-add','view-feedback'];
+const views = ['view-users','view-library','view-practice','view-add','view-feedback','view-history'];
 function show(v){ views.forEach(x=>$(x).hidden = x!==v); $('player').hidden = v!=='view-practice'; window.scrollTo(0,0); if(v!=='view-practice') stopPlay(); }
 
-/* ---------- Library ---------- */
+/* ---------- Users screen ---------- */
+let newColor = COLORS[0];
+function renderUsers(){
+  const root=$('userList'); root.innerHTML='';
+  if(!U.list.length) root.innerHTML=`<div class="note" style="margin:0">${U.online?'まだユーザーがいません。下で名前を登録してください。':'クラウドに接続できません。端末に保存された情報で続けます。'}</div>`;
+  U.list.forEach(u=>{ const b=document.createElement('button'); b.className='card ucard'; const att=LS.get('ss.att.'+u.id,[]);
+    b.innerHTML=`<span class="avatar big" style="background:${esc(u.color)}">${esc(u.name.slice(0,1).toUpperCase())}</span><div><div class="t">${esc(u.name)}</div><div class="m"><span>${att.length?`通算 ${att.length} 回 ・ 最近 ${new Date(att[0].at).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}`:'まだ記録なし'}</span></div></div>`;
+    b.onclick=()=>selectUser(u.id); root.appendChild(b); });
+  const sw=$('uColors'); sw.innerHTML=COLORS.map(c=>`<button type="button" class="sw${c===newColor?' on':''}" style="background:${c}" data-c="${c}" aria-label="色"></button>`).join('');
+}
+$('uColors').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; newColor=b.dataset.c; renderUsers(); };
+$('userForm').onsubmit=async e=>{ e.preventDefault(); const name=$('uName').value.trim(); if(!name) return;
+  let u={id:'local-'+Date.now(), name, color:newColor, created_at:new Date().toISOString()};
+  try{ const rows=await sb('shadowing_users',{method:'POST',body:JSON.stringify({name,color:newColor}),headers:{Prefer:'return=representation'}}); u=rows[0]; U.online=true; }catch(err){ U.online=false; toast('クラウドに接続できないため、この端末だけのユーザーとして追加しました'); }
+  U.list.push(u); LS.set('ss.users',U.list); $('uName').value=''; selectUser(u.id); };
+async function selectUser(id){ U.cur=id; LS.set('ss.uid',id); U.attempts=LS.get('ss.att.'+id,[]); renderHome(); show('view-library'); await loadAttempts(); renderHome(); }
+$('btnUser').onclick=async()=>{ show('view-users'); renderUsers(); await loadUsers(); renderUsers(); };
+
+/* ---------- Home ---------- */
+const F = { cat: LS.get('ss.f.cat','all'), lv: LS.get('ss.f.lv','all'), st: LS.get('ss.f.st','all') };
+function chip(label, on, data){ return `<button class="tg${on?' on':''}" aria-pressed="${on}" ${data}>${label}</button>`; }
+function renderHome(){
+  const u=curUser(); const av=$('btnUser'); av.textContent=u?u.name.slice(0,1).toUpperCase():'?'; av.style.background=u?u.color:'var(--muted)';
+  // today card
+  const today=dayKey(Date.now()); const todayN=U.attempts.filter(a=>dayKey(a.at)===today).length; const st=streak();
+  const recent=U.attempts.slice(0,10); const avg=recent.length?Math.round(recent.reduce((n,a)=>n+a.score,0)/recent.length):null;
+  const rec=recommend();
+  const days=[]; for(let i=13;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); const k=dayKey(d); const n=U.attempts.filter(a=>dayKey(a.at)===k); days.push({k,n:n.length,best:n.length?Math.max(...n.map(a=>a.score)):null}); }
+  $('today').innerHTML=`
+    <div class="todaygrid">
+      <div class="stat"><div class="eyebrow">連続</div><div class="num">${st}<small>日</small></div></div>
+      <div class="stat"><div class="eyebrow">今日</div><div class="num">${todayN}<small>本</small></div></div>
+      <div class="stat"><div class="eyebrow">直近10回平均</div><div class="num">${avg==null?'—':avg}<small>${avg==null?'':'点'}</small></div></div>
+      <div class="stat"><div class="eyebrow">通算</div><div class="num">${U.attempts.length}<small>回</small></div></div>
+    </div>
+    <div class="dots" aria-label="直近14日の実施">${days.map(d=>`<span class="dot${d.n?' on':''}${d.k===today?' today':''}" title="${d.k} ${d.n}本" style="${d.best!=null?`opacity:${0.45+0.55*Math.min(1,d.best/100)}`:''}"></span>`).join('')}</div>
+    ${rec?`<button class="recbtn" id="btnRec1"><span class="eyebrow" style="color:var(--accent-fg);opacity:.85">今日のおすすめ</span><b>${esc(rec.sc.title)}</b><small>${esc(rec.why)}　・　${esc(rec.sc.level)}</small></button>`:''}
+    <div class="row" style="margin-top:10px"><button class="btn ghost" id="btnHist">実施履歴を見る</button></div>
+    ${U.online?'':'<div class="note" style="margin-top:8px">クラウド未接続：記録は端末に保存し、接続できたときに送信します。</div>'}`;
+  if(rec) $('btnRec1').onclick=()=>openPractice(rec.sc.id);
+  $('btnHist').onclick=()=>{ renderHistory(); show('view-history'); };
+  // filters
+  const counts={}; allScripts().forEach(sc=>{ counts[sc.cat]=(counts[sc.cat]||0)+1; });
+  $('catChips').innerHTML=chip('すべて',F.cat==='all','data-f="cat" data-v="all"')+CATS.filter(c=>counts[c[0]]).map(c=>chip(`${c[1]} <span class="cnt">${counts[c[0]]}</span>`,F.cat===c[0],`data-f="cat" data-v="${c[0]}"`)).join('');
+  $('lvChips').innerHTML=['all','TOEIC 600','TOEIC 730','TOEIC 860'].map(l=>chip(l==='all'?'全レベル':l,F.lv===l,`data-f="lv" data-v="${l}"`)).join('');
+  $('stChips').innerHTML=['all','new','review','almost','done'].map(s=>chip(s==='all'?'全状態':ST_LABEL[s],F.st===s,`data-f="st" data-v="${s}"`)).join('');
+  renderLib();
+}
+['catChips','lvChips','stChips'].forEach(id=>$(id).onclick=e=>{ const b=e.target.closest('button'); if(!b) return; F[b.dataset.f]=b.dataset.v; LS.set('ss.f.'+b.dataset.f,b.dataset.v); renderHome(); });
 function renderLib(){
   const lib=$('lib'); lib.innerHTML='';
-  allScripts().forEach(sc=>{
-    const words = sc.s.reduce((n,p)=>n+tokenize(p[0]).length,0);
-    const h = history[sc.id]||[]; const last = h[h.length-1];
+  const list=allScripts().filter(sc=>(F.cat==='all'||sc.cat===F.cat)&&(F.lv==='all'||sc.level===F.lv)&&(F.st==='all'||statusOf(sc.id)===F.st));
+  if(!list.length){ lib.innerHTML='<div class="note" style="margin:0">該当する教材がありません。絞り込みを変えてください。</div>'; return; }
+  list.forEach(sc=>{
+    const words = sc.s.reduce((n,p)=>n+tokenize(p[0]).length,0); const a=attemptsFor(sc.id); const st=statusOf(sc.id);
     const b=document.createElement('button'); b.className='card';
     b.innerHTML=`<div class="t">${esc(sc.title)}</div>
-      <div class="score ${last?'':'none'}">${last?`${last.score}<small>前回 / ${h.length}回</small>`:'未挑戦'}</div>
-      <div class="m"><span class="pill lv">${esc(sc.level)}</span><span class="pill">${esc(sc.type)}</span><span>${words}語・${sc.s.length}文</span></div>`;
+      <div class="score ${a.length?'':'none'}">${a.length?`${a[0].score}<small>前回 / ${a.length}回</small>`:'未挑戦'}</div>
+      <div class="m"><span class="pill lv">${esc(sc.level)}</span><span class="pill">${esc(sc.type||CAT_NAME[sc.cat]||'')}</span><span class="pill st-${st}">${ST_LABEL[st]}</span><span>${words}語・${sc.s.length}文</span></div>`;
     b.onclick=()=>openPractice(sc.id);
     lib.appendChild(b);
   });
 }
 $('goAdd').onclick=()=>show('view-add');
-$('backLib').onclick=$('backLib2').onclick=()=>{show('view-library');renderLib()};
+$('backLib').onclick=$('backLib2').onclick=$('backLib3').onclick=()=>{show('view-library');renderHome()};
 $('backPractice').onclick=()=>show('view-practice');
 
+/* ---------- History ---------- */
+function renderHistory(){
+  const root=$('histBody'); const a=U.attempts; if(!a.length){ root.innerHTML='<div class="note">まだ記録がありません。</div>'; return; }
+  const byId=Object.fromEntries(allScripts().map(s=>[s.id,s]));
+  // trend of last 30 attempts (oldest→newest)
+  const tr=a.slice(0,30).reverse(); const W=520,H=120,pad=10; const x=i=>pad+(tr.length>1?i/(tr.length-1):0.5)*(W-2*pad); const y=s=>H-pad-(s/100)*(H-2*pad);
+  const path=tr.map((t,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(t.score).toFixed(1)).join(' ');
+  const best=Math.max(...a.map(t=>t.score)); const avgAll=Math.round(a.reduce((n,t)=>n+t.score,0)/a.length);
+  const groups={}; a.forEach(t=>{ (groups[dayKey(t.at)]=groups[dayKey(t.at)]||[]).push(t); });
+  root.innerHTML=`<div class="section" style="margin-bottom:14px"><h2>スコア推移（直近30回）</h2>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" aria-label="スコア推移">
+      ${[50,80].map(v=>`<line x1="${pad}" y1="${y(v)}" x2="${W-pad}" y2="${y(v)}" stroke="var(--line)" stroke-dasharray="3 3"/><text x="${W-pad}" y="${y(v)-3}" text-anchor="end" font-size="10" fill="var(--muted)">${v}</text>`).join('')}
+      <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+      ${tr.map((t,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(t.score).toFixed(1)}" r="3" fill="var(--accent)"/>`).join('')}
+    </svg>
+    <div class="note" style="margin-top:6px">通算 ${a.length} 回 ・ 平均 ${avgAll} 点 ・ ベスト ${best} 点 ・ 連続 ${streak()} 日 ・ 定着 ${allScripts().filter(s=>statusOf(s.id)==='done').length} 本</div></div>
+    ${Object.keys(groups).sort().reverse().map(k=>`<div class="eyebrow" style="margin:14px 0 6px">${k}（${groups[k].length}本）</div><div class="list" style="margin-top:0">${groups[k].map(t=>{ const sc=byId[t.sid]; return `<button class="card hcard" data-sid="${esc(t.sid)}"><div class="t">${esc(sc?sc.title:t.sid)}</div><div class="score">${t.score}<small>${new Date(t.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} ・ ${(+t.speed).toFixed(1)}×</small></div><div class="m"><span>発音 ${t.p}</span><span>抑揚 ${t.i}</span><span>流暢 ${t.f}</span></div></button>`; }).join('')}</div>`).join('')}`;
+  root.querySelectorAll('.hcard').forEach(b=>b.onclick=()=>{ if(byId[b.dataset.sid]) openPractice(b.dataset.sid); });
+}
+
+/* ---------- Practice ---------- */
 /* ---------- Practice ---------- */
 function openPractice(id){
   S.cur = allScripts().find(x=>x.id===id); S.idx=0; S.loopsDone=0; S.lastEval=null;
   $('pTitle').textContent=S.cur.title;
   const words = S.cur.s.reduce((n,p)=>n+tokenize(p[0]).length,0);
-  $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type)}</span><span class="pill">${words}語</span><span class="pill">${S.cur.s.length}文</span>`;
+  $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${words}語</span><span class="pill">${S.cur.s.length}文</span>`;
   primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn();
   renderScript($('script'), null);
   setStatus('▶ でお手本を再生。文をタップするとその文だけ再生します。');
@@ -366,7 +513,7 @@ $('spdDown').onclick=()=>setSpeed(S.speed-0.1); $('spdUp').onclick=()=>setSpeed(
 $('presets').onclick=e=>{const b=e.target.closest('button'); if(b) setSpeed(+b.dataset.s)};
 
 /* ---------- Playback engine: pre-rendered audio (built-in scripts) with TTS fallback (user scripts) ---------- */
-const TL = {"b1": {"segs": [{"start": 0.0, "end": 3.657}, {"start": 4.007, "end": 7.734}, {"start": 8.084, "end": 10.836}, {"start": 11.186, "end": 16.677}, {"start": 17.027, "end": 18.885}], "dur": 18.885}, "b2": {"segs": [{"start": 0.0, "end": 3.008}, {"start": 3.358, "end": 6.078}, {"start": 6.428, "end": 10.876}, {"start": 11.226, "end": 13.978}, {"start": 14.328, "end": 17.8}, {"start": 18.15, "end": 22.71}], "dur": 22.71}, "b3": {"segs": [{"start": 0.0, "end": 1.324}, {"start": 1.674, "end": 6.817}, {"start": 7.167, "end": 10.127}, {"start": 10.477, "end": 14.843}, {"start": 15.193, "end": 19.001}], "dur": 19.001}, "b4": {"segs": [{"start": 0.0, "end": 1.744}, {"start": 2.094, "end": 6.366}, {"start": 6.716, "end": 13.244}, {"start": 13.594, "end": 16.778}, {"start": 17.128, "end": 19.768}], "dur": 19.768}};
+const TL = window.CONTENT_TL || {};
 const GAP = 0.35;
 const audio = new Audio(); audio.preload = 'auto';
 try { audio.preservesPitch = true; audio.mozPreservesPitch = true; } catch (e) {}
@@ -583,8 +730,6 @@ function abCompare(a){
 }
 
 /* ---------- AI assessment (Gemini via Supabase Edge Function) + pitch contours ---------- */
-const SB_URL = 'https://hzsgkeuiugvftotrphki.supabase.co';
-const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6c2drZXVpdWd2ZnRvdHJwaGtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkwMTY1OTAsImV4cCI6MjEwNDU5MjU5MH0.q5ewSFfVnrQX23BA4r_2DBPPruNpKl_sDk5EL95Qso4';
 const AC = window.AudioContext || window.webkitAudioContext;
 
 async function decodeToMono(arrayBuffer, targetSr){
@@ -667,7 +812,7 @@ function renderAi(ev,g){
     <div class="note" style="margin-top:2px">${ev.speed.toFixed(1)}× ・ 録音 ${ev.dur.toFixed(1)}秒 ／ お手本 ${ev.modelDur.toFixed(1)}秒${g.meta&&g.meta.ms?' ・ 評価 '+(g.meta.ms/1000).toFixed(1)+'秒':''}</div>`;
   const sc=pct(g.overall), r=52, c=2*Math.PI*r, col=ev.demo?'var(--muted)':sc>=80?'var(--good)':sc>=60?'var(--warn)':'var(--miss)';
   const arc=$('ringArc'); if(arc){ arc.setAttribute('stroke-dasharray',`${c*sc/100} ${c}`); arc.setAttribute('stroke',col); } const num=$('ringNum'); if(num){ num.textContent=sc; num.setAttribute('font-size','30'); }
-  if(!ev.demo){ const h=history[S.cur.id]||[]; h.push({score:sc,speed:S.speed,at:ev.at}); history[S.cur.id]=h.slice(-20); LS.set('ss.hist',history); }
+  if(!ev.demo) saveAttempt(ev,g);
   $('aiSection').innerHTML=`<h2>強化ポイント ${ev.demo?'':`<span class="note" style="margin:0;font-weight:400">Gemini ${esc((g.meta&&g.meta.model||'').replace('gemini-',''))}</span>`}</h2>
     ${g.leakage?`<div class="badge warn" style="margin-bottom:10px">録音にお手本の音声が混ざっています。イヤホンが外れていないか確認してください。</div>`:''}
     ${g.good?`<div class="note" style="margin:0 0 10px;color:var(--good)">◎ ${esc(g.good)}</div>`:''}
@@ -781,7 +926,7 @@ $('addForm').onsubmit=async e=>{ e.preventDefault();
   const sents=text.match(/[^.!?]+[.!?]+["”']?|[^.!?]+$/g)?.map(s=>s.trim()).filter(Boolean)||[];
   if(!sents.length) return;
   const jaLines=$('aJa').value.split(/\n/).map(x=>x.trim()).filter(Boolean);
-  const sc={id:'u'+Date.now(),title:$('aTitle').value.trim()||'無題の教材',type:'自作',level:$('aLevel').value,s:sents.map((s,i)=>[s,jaLines[i]||''])};
+  const sc={id:'u'+Date.now(),title:$('aTitle').value.trim()||'無題の教材',type:'自作',cat:'user',voice:'f',level:$('aLevel').value,s:sents.map((s,i)=>[s,jaLines[i]||''])};
   if(sc.s.some(p=>!p[1])){ const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='日本語訳を作成中…'; const ok=await translateScript(sc); btn.disabled=false; btn.textContent='登録して再生画面へ'; if(!ok) toast('自動翻訳が使えない環境です。再生画面の「日本語訳を付ける」か、手入力で追加できます。'); }
   userScripts.push(sc); LS.set('ss.user',userScripts);
   $('addForm').reset(); toast(`「${sc.title}」を登録しました（${sents.length}文）`);
@@ -790,7 +935,10 @@ $('addForm').onsubmit=async e=>{ e.preventDefault();
 function toast(t){ const d=document.createElement('div'); d.className='toast'; d.textContent=t; document.body.appendChild(d); setTimeout(()=>d.remove(),2600); }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-renderLib();
+(async function boot(){
+  if(U.cur && curUser()){ renderHome(); show('view-library'); await loadUsers(); await loadAttempts(); renderHome(); }
+  else { show('view-users'); renderUsers(); await loadUsers(); renderUsers(); if(U.list.length===1 && !U.cur){ /* single learner: no need to ask */ selectUser(U.list[0].id); } }
+})();
 </script>
 
 </body>
