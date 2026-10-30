@@ -143,6 +143,10 @@ h1,h2,h3{margin:0;font-family:var(--font-ui);text-wrap:balance;font-weight:900}
 .sent .n{font-family:var(--font-ui);font-size:12px;font-weight:900;color:var(--muted);padding-top:5px;font-variant-numeric:tabular-nums}
 .sent .en{font-family:var(--font-script);font-size:18px;line-height:1.5;min-width:0;overflow-wrap:anywhere;color:var(--fg)}
 .sent .ja{font-size:12.5px;color:var(--muted);margin-top:4px;min-width:0;font-weight:700}
+.sent .kana{font-size:13.5px;color:var(--accent-dark);margin-top:5px;min-width:0;line-height:1.7;font-weight:500;letter-spacing:.01em;overflow-wrap:anywhere}
+.sent .kana b{font-weight:900;color:var(--fg);font-size:15px}
+.sent .kana .arrow{color:var(--sun-dark);font-weight:900;margin-left:4px}
+.blind .kana{display:none}
 .sent.active{background:var(--accent-soft)}
 .sent.active .n{color:var(--accent-dark)}
 .w{border-radius:4px;padding:0 1px;transition:background .08s}
@@ -311,6 +315,7 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
     <div class="meta" id="pMeta"></div>
     <div class="toggles">
       <button class="tg" id="tgJa" aria-pressed="true">日本語訳</button>
+      <button class="tg" id="tgKana" aria-pressed="false">読み方</button>
       <button class="tg" id="tgBlind" aria-pressed="false">スクリプトを隠す</button>
       <button class="tg" id="tgSent" aria-pressed="false">1文ずつ止める</button>
       <button class="tg" id="tgEngine" aria-pressed="false" title="付属教材の音声をクラウド音声か端末の音声合成かで切り替え">端末の音声で再生</button>
@@ -446,7 +451,7 @@ function recommend(){
 
 /* ---------- State ---------- */
 /* ---------- State ---------- */
-const S = {cur:null, engine: LS.get('ss.engine','file'), speed:1.0, loop:0 /*0=∞*/, sentMode:false, blind:false, ja:true, idx:0, playing:false, loopsDone:0, modelDur:{}, playStart:0, lastEval:null};
+const S = {cur:null, engine: LS.get('ss.engine','file'), kana: LS.get('ss.kana', false), speed:1.0, loop:0 /*0=∞*/, sentMode:false, blind:false, ja:true, idx:0, playing:false, loopsDone:0, modelDur:{}, playStart:0, lastEval:null};
 
 /* ---------- Views ---------- */
 const $ = id => document.getElementById(id);
@@ -566,7 +571,7 @@ function openPractice(id){
   $('pTitle').textContent=S.cur.title;
   const words = S.cur.s.reduce((n,p)=>n+tokenize(p[0]).length,0);
   $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${voiceLabel(S.cur)}</span><span class="pill">${words}語・${S.cur.s.length}文</span>`;
-  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn();
+  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); if(S.kana && !kanaOf(S.cur,0)) ensureKana(S.cur).then(ok=>{ if(ok && S.cur) renderScript($('script'),null); });
   renderScript($('script'), null);
   setStatus('▶ でお手本を再生。文をタップするとその文だけ再生します。');
   show('view-practice');
@@ -578,12 +583,23 @@ function renderScript(root, missSet){
     const b=document.createElement('button'); b.className='sent'+(i===S.idx&&root.id==='script'?' active':''); b.dataset.i=i;
     let wi=0;
     const en = p[0].replace(/\S+/g,(w,off)=>{const toks=tokenize(w); let miss=''; toks.forEach(()=>{ if(missSet&&missSet.has(i+':'+wi)) miss=' miss'; wi++; }); return `<span class="w${miss}" data-o="${off}">${esc(w)}</span>`});
-    b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:''}</div>`;
+    const kn=kanaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${kn&&S.kana?`<div class="kana">${kanaHtml(kn)}</div>`:''}${p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:''}</div>`;
     if(root.id==='script') b.onclick=()=>{S.idx=i; S.loopsDone=0; playFrom(i,true)};
     root.appendChild(b);
   });
 }
 $('tgJa').onclick=e=>{S.ja=!S.ja;e.currentTarget.setAttribute('aria-pressed',S.ja);renderScript($('script'),null)};
+$('tgKana').onclick=async e=>{ S.kana=!S.kana; LS.set('ss.kana',S.kana); e.currentTarget.setAttribute('aria-pressed',S.kana);
+  if(S.kana && !kanaOf(S.cur,0)){ e.currentTarget.textContent='読み方を作成中…'; const ok=await ensureKana(S.cur); e.currentTarget.textContent='読み方'; if(!ok) toast('読み方を作成できませんでした（接続を確認してください）'); }
+  renderScript($('script'),null); };
+/* katakana readings: bundled (KANA map from cloud) or fetched for user scripts */
+const KANA = { map: LS.get('ss.kanamap',{}) };
+function kanaOf(sc,i){ const k=KANA.map[sc.id]; return k && k.kana && k.kana[i] || null; }
+function kanaHtml(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/(↘↗|↗|↘)\s*$/,'<span class="arrow">$1</span>'); }
+async function loadKana(){ try{ const rows=await sb('shadowing_kana?select=id,accent,kana'); const m={}; rows.forEach(r=>{ m[r.id]={accent:r.accent,kana:r.kana}; }); Object.keys(KANA.map).filter(k=>k.startsWith('u')).forEach(k=>m[k]=KANA.map[k]); KANA.map=m; LS.set('ss.kanamap',m); }catch(e){} }
+async function ensureKana(sc){ if(kanaOf(sc,0)) return true;
+  try{ const r=await fetch(SB_URL+'/functions/v1/kana',{method:'POST',headers:SB_H,body:JSON.stringify({sentences:sc.s.map(p=>p[0]),accent:(CLOUD.map[sc.id]&&CLOUD.map[sc.id].accent)||'US'})}); const g=await r.json(); if(!r.ok||!g.kana) return false;
+    KANA.map[sc.id]={accent:'US',kana:g.kana}; LS.set('ss.kanamap',KANA.map); return true; }catch(e){ return false; } }
 $('tgBlind').onclick=e=>{S.blind=!S.blind;e.currentTarget.setAttribute('aria-pressed',S.blind);$('script').classList.toggle('blind',S.blind)};
 $('tgSent').onclick=e=>{S.sentMode=!S.sentMode;e.currentTarget.setAttribute('aria-pressed',S.sentMode)};
 $('tgEngine').onclick=e=>{ S.engine = S.engine==='file'?'tts':'file'; LS.set('ss.engine',S.engine); syncEngineBtn(); if(S.playing){ const i=S.idx; stopPlay(); playFrom(i,false); } };
@@ -1037,7 +1053,7 @@ $('addForm').onsubmit=async e=>{ e.preventDefault();
   const jaLines=$('aJa').value.split(/\n/).map(x=>x.trim()).filter(Boolean);
   const sc={id:'u'+Date.now(),title:$('aTitle').value.trim()||'無題の教材',type:'自作',cat:'user',voice:'f',level:$('aLevel').value,s:sents.map((s,i)=>[s,jaLines[i]||''])};
   if(sc.s.some(p=>!p[1])){ const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='日本語訳を作成中…'; const ok=await translateScript(sc); btn.disabled=false; btn.textContent='登録して再生画面へ'; if(!ok) toast('自動翻訳が使えない環境です。再生画面の「日本語訳を付ける」か、手入力で追加できます。'); }
-  userScripts.push(sc); LS.set('ss.user',userScripts);
+  userScripts.push(sc); LS.set('ss.user',userScripts); ensureKana(sc).then(ok=>{ if(ok && S.cur && S.cur.id===sc.id && S.kana) renderScript($('script'),null); });
   $('addForm').reset(); toast(`「${sc.title}」を登録しました（${sents.length}文）`); F.cat='user';
   openPractice(sc.id); setTimeout(()=>playFrom(0,false),300);
 };
@@ -1045,7 +1061,7 @@ function toast(t){ const d=document.createElement('div'); d.className='toast'; d
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 (async function boot(){
-  loadCloudAudio();
+  loadCloudAudio(); loadKana();
   if(U.cur && curUser()){ renderHome(); show('view-library'); await loadUsers(); await loadAttempts(); renderHome(); }
   else { show('view-users'); renderUsers(); await loadUsers(); renderUsers(); if(U.list.length===1 && !U.cur){ /* single learner: no need to ask */ selectUser(U.list[0].id); } }
 })();
