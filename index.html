@@ -71,6 +71,14 @@ h1,h2,h3{margin:0;font-family:var(--font-ui);text-wrap:balance}
 .recbtn b{font-family:var(--font-ui);font-size:16px}
 .recbtn small{font-size:12px;opacity:.9}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.catgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px}
+.cattile{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 12px 10px;text-align:left;display:grid;gap:6px;min-width:0}
+.cattile .ic{font-size:22px;line-height:1}
+.cattile .t{font-family:var(--font-ui);font-weight:700;font-size:14px;line-height:1.25}
+.cattile .m{font-size:11.5px;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
+.cattile .prog{height:5px;border-radius:999px;background:var(--surface2);overflow:hidden;display:flex}
+.cattile .prog i{display:block;height:100%}
+.cattile .prog .d{background:var(--accent)}.cattile .prog .a{background:var(--warn)}.cattile .prog .r{background:var(--miss)}
 .chips .tg{padding:5px 10px;font-size:12px}
 .chips .cnt{opacity:.6;font-weight:600;margin-left:2px}
 .pill.st-new{background:var(--surface2)}
@@ -217,13 +225,23 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
       <button class="avatar" id="btnUser" aria-label="ユーザーを切り替え">A</button>
     </div>
     <div class="today" id="today"></div>
-    <div class="eyebrow" style="margin-top:18px">教材を選ぶ</div>
-    <div class="chips" id="catChips"></div>
+    <div class="eyebrow" style="margin-top:18px">テーマから選ぶ</div>
+    <div class="catgrid" id="catGrid"></div>
+    <button class="addbtn" id="goAdd">＋ テキストから教材を登録</button>
+    <p class="note">付属教材は事前生成した音声（ニューラルTTS）をクラウドから再生します。自作教材は端末の音声合成（TTS）を使います。録音した声は Gemini が聞いて、発音・イントネーション・流暢さを評価します。イヤホン推奨。マイクが使えない環境ではサンプル評価が表示されます。</p>
+  </section>
+
+  <!-- CATEGORY -->
+  <section id="view-category" hidden>
+    <div class="topbar">
+      <button class="back" id="backLib4" aria-label="ホームへ戻る">←</button>
+      <h1 id="catTitle">カテゴリ</h1>
+    </div>
+    <div class="note" id="catDesc" style="margin:0 0 10px"></div>
     <div class="chips" id="lvChips"></div>
     <div class="chips" id="stChips"></div>
     <div class="list" id="lib"></div>
-    <button class="addbtn" id="goAdd">＋ テキストから教材を登録</button>
-    <p class="note">付属教材は事前生成した音声（ニューラルTTS）をクラウドから再生します。自作教材は端末の音声合成（TTS）を使います。録音した声は Gemini が聞いて、発音・イントネーション・流暢さを評価します。イヤホン推奨。マイクが使えない環境ではサンプル評価が表示されます。</p>
+    <button class="addbtn" id="goAdd2" hidden>＋ テキストから教材を登録</button>
   </section>
 
   <!-- HISTORY -->
@@ -329,6 +347,7 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
 const BUILTIN = Array.isArray(window.CONTENT) ? window.CONTENT : [];
 const CATS = [['air','空港・機内'],['store','店内・施設'],['vm','留守電・伝言'],['mtg','社内連絡・会議'],['ad','広告・CM'],['news','ニュース・天気・交通'],['tour','ツアー・施設案内'],['event','イベント・講演'],['phone','電話・自動音声'],['talk','説明・トレーニング'],['user','自作']];
 const CAT_NAME = Object.fromEntries(CATS);
+const CAT_META = {air:['✈️','搭乗案内・遅延・機内サービス・手荷物'],store:['🏬','店内放送・閉店時刻・セール・施設案内'],vm:['📞','取引先や同僚からの留守電・折り返し依頼'],mtg:['🏢','会議の冒頭・社内方針・スケジュール連絡'],ad:['📻','ラジオCM・開店・会員特典・期間限定'],news:['📰','地域ニュース・天気予報・交通情報'],tour:['🗺️','博物館・工場・市内観光のガイド'],event:['🎤','会議の開会・登壇者紹介・表彰'],phone:['☎️','自動音声メニュー・予約確認・障害案内'],talk:['🧑‍🏫','製品説明・社内研修・手順の説明'],user:['✍️','自分で登録した英文']};
 const LS = {get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 let userScripts = LS.get('ss.user',[]);
 const allScripts = () => [...BUILTIN,...userScripts.map(u=>({...u,cat:'user'}))];
@@ -382,7 +401,7 @@ const S = {cur:null, engine: LS.get('ss.engine','file'), speed:1.0, loop:0 /*0=�
 
 /* ---------- Views ---------- */
 const $ = id => document.getElementById(id);
-const views = ['view-users','view-library','view-practice','view-add','view-feedback','view-history'];
+const views = ['view-users','view-library','view-category','view-practice','view-add','view-feedback','view-history'];
 function show(v){ views.forEach(x=>$(x).hidden = x!==v); $('player').hidden = v!=='view-practice'; window.scrollTo(0,0); if(v!=='view-practice') stopPlay(); }
 
 /* ---------- Users screen ---------- */
@@ -404,7 +423,7 @@ async function selectUser(id){ U.cur=id; LS.set('ss.uid',id); U.attempts=LS.get(
 $('btnUser').onclick=async()=>{ show('view-users'); renderUsers(); await loadUsers(); renderUsers(); };
 
 /* ---------- Home ---------- */
-const F = { cat: LS.get('ss.f.cat','all'), lv: LS.get('ss.f.lv','all'), st: LS.get('ss.f.st','all') };
+const F = { cat: LS.get('ss.f.cat','air'), lv: LS.get('ss.f.lv','all'), st: LS.get('ss.f.st','all') };
 function chip(label, on, data){ return `<button class="tg${on?' on':''}" aria-pressed="${on}" ${data}>${label}</button>`; }
 function renderHome(){
   const u=curUser(); const av=$('btnUser'); av.textContent=u?u.name.slice(0,1).toUpperCase():'?'; av.style.background=u?u.color:'var(--muted)';
@@ -426,17 +445,31 @@ function renderHome(){
     ${U.online?'':'<div class="note" style="margin-top:8px">クラウド未接続：記録は端末に保存し、接続できたときに送信します。</div>'}`;
   if(rec) $('btnRec1').onclick=()=>openPractice(rec.sc.id);
   $('btnHist').onclick=()=>{ renderHistory(); show('view-history'); };
-  // filters
-  const counts={}; allScripts().forEach(sc=>{ counts[sc.cat]=(counts[sc.cat]||0)+1; });
-  $('catChips').innerHTML=chip('すべて',F.cat==='all','data-f="cat" data-v="all"')+CATS.filter(c=>counts[c[0]]).map(c=>chip(`${c[1]} <span class="cnt">${counts[c[0]]}</span>`,F.cat===c[0],`data-f="cat" data-v="${c[0]}"`)).join('');
+  renderCatGrid();
+}
+function catStats(code){ const list=allScripts().filter(sc=>sc.cat===code); const st=list.map(sc=>statusOf(sc.id)); return {n:list.length, done:st.filter(x=>x==='done').length, almost:st.filter(x=>x==='almost').length, review:st.filter(x=>x==='review').length}; }
+function renderCatGrid(){
+  const g=$('catGrid'); g.innerHTML='';
+  CATS.forEach(([code,name])=>{ const st=catStats(code); if(!st.n && code!=='user') return; if(!st.n && code==='user') return;
+    const b=document.createElement('button'); b.className='cattile'; const meta=CAT_META[code]||['📄',''];
+    b.innerHTML=`<div class="ic">${meta[0]}</div><div class="t">${esc(name)}</div><div class="m"><span>${st.n}本</span><span>定着 ${st.done}</span></div>
+      <div class="prog"><i class="d" style="width:${100*st.done/st.n}%"></i><i class="a" style="width:${100*st.almost/st.n}%"></i><i class="r" style="width:${100*st.review/st.n}%"></i></div>`;
+    b.onclick=()=>openCategory(code); g.appendChild(b); });
+}
+function openCategory(code){ F.cat=code; LS.set('ss.f.cat',code); const meta=CAT_META[code]||['',''];
+  $('catTitle').textContent=(meta[0]?meta[0]+' ':'')+CAT_NAME[code]; const st=catStats(code);
+  $('catDesc').textContent=`${meta[1]}　｜ ${st.n}本・定着 ${st.done}・あと1回 ${st.almost}・要復習 ${st.review}`;
+  $('goAdd2').hidden = code!=='user';
+  renderCatFilters(); show('view-category'); }
+function renderCatFilters(){
   $('lvChips').innerHTML=['all','TOEIC 600','TOEIC 730','TOEIC 860'].map(l=>chip(l==='all'?'全レベル':l,F.lv===l,`data-f="lv" data-v="${l}"`)).join('');
-  $('stChips').innerHTML=['all','new','review','almost','done'].map(s=>chip(s==='all'?'全状態':ST_LABEL[s],F.st===s,`data-f="st" data-v="${s}"`)).join('');
+  $('stChips').innerHTML=['all','new','review','almost','done'].map(st=>chip(st==='all'?'全状態':ST_LABEL[st],F.st===st,`data-f="st" data-v="${st}"`)).join('');
   renderLib();
 }
-['catChips','lvChips','stChips'].forEach(id=>$(id).onclick=e=>{ const b=e.target.closest('button'); if(!b) return; F[b.dataset.f]=b.dataset.v; LS.set('ss.f.'+b.dataset.f,b.dataset.v); renderHome(); });
+['lvChips','stChips'].forEach(id=>$(id).onclick=e=>{ const b=e.target.closest('button'); if(!b) return; F[b.dataset.f]=b.dataset.v; LS.set('ss.f.'+b.dataset.f,b.dataset.v); renderCatFilters(); });
 function renderLib(){
   const lib=$('lib'); lib.innerHTML='';
-  const list=allScripts().filter(sc=>(F.cat==='all'||sc.cat===F.cat)&&(F.lv==='all'||sc.level===F.lv)&&(F.st==='all'||statusOf(sc.id)===F.st));
+  const list=allScripts().filter(sc=>sc.cat===F.cat&&(F.lv==='all'||sc.level===F.lv)&&(F.st==='all'||statusOf(sc.id)===F.st));
   if(!list.length){ lib.innerHTML='<div class="note" style="margin:0">該当する教材がありません。絞り込みを変えてください。</div>'; return; }
   list.forEach(sc=>{
     const words = sc.s.reduce((n,p)=>n+tokenize(p[0]).length,0); const a=attemptsFor(sc.id); const st=statusOf(sc.id);
@@ -448,8 +481,9 @@ function renderLib(){
     lib.appendChild(b);
   });
 }
-$('goAdd').onclick=()=>show('view-add');
-$('backLib').onclick=$('backLib2').onclick=$('backLib3').onclick=()=>{show('view-library');renderHome()};
+$('goAdd').onclick=$('goAdd2').onclick=()=>show('view-add');
+$('backLib2').onclick=$('backLib3').onclick=$('backLib4').onclick=()=>{show('view-library');renderHome()};
+$('backLib').onclick=()=>{ if(S.cur&&S.cur.cat){ openCategory(S.cur.cat); } else { show('view-library'); renderHome(); } };
 $('backPractice').onclick=()=>show('view-practice');
 
 /* ---------- History ---------- */
@@ -929,7 +963,7 @@ $('addForm').onsubmit=async e=>{ e.preventDefault();
   const sc={id:'u'+Date.now(),title:$('aTitle').value.trim()||'無題の教材',type:'自作',cat:'user',voice:'f',level:$('aLevel').value,s:sents.map((s,i)=>[s,jaLines[i]||''])};
   if(sc.s.some(p=>!p[1])){ const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='日本語訳を作成中…'; const ok=await translateScript(sc); btn.disabled=false; btn.textContent='登録して再生画面へ'; if(!ok) toast('自動翻訳が使えない環境です。再生画面の「日本語訳を付ける」か、手入力で追加できます。'); }
   userScripts.push(sc); LS.set('ss.user',userScripts);
-  $('addForm').reset(); toast(`「${sc.title}」を登録しました（${sents.length}文）`);
+  $('addForm').reset(); toast(`「${sc.title}」を登録しました（${sents.length}文）`); F.cat='user';
   openPractice(sc.id); setTimeout(()=>playFrom(0,false),300);
 };
 function toast(t){ const d=document.createElement('div'); d.className='toast'; d.textContent=t; document.body.appendChild(d); setTimeout(()=>d.remove(),2600); }
