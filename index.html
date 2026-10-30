@@ -146,6 +146,8 @@ h1,h2,h3{margin:0;font-family:var(--font-ui);text-wrap:balance;font-weight:900}
 .sent .kana{font-size:13.5px;color:var(--accent-dark);margin-top:5px;min-width:0;line-height:1.7;font-weight:500;letter-spacing:.01em;overflow-wrap:anywhere}
 .sent .kana b{font-weight:900;color:var(--fg);font-size:15px}
 .sent .kana .arrow{color:var(--sun-dark);font-weight:900;margin-left:4px}
+.sent .ipa{font-family:"Literata","Charis SIL","Gentium Plus","Doulos SIL","Noto Serif","Georgia",serif;font-size:13.5px;color:var(--muted);margin-top:2px;min-width:0;line-height:1.6;overflow-wrap:anywhere;letter-spacing:.01em}
+.blind .ipa{display:none}
 .blind .kana{display:none}
 .sent.active{background:var(--accent-soft)}
 .sent.active .n{color:var(--accent-dark)}
@@ -571,7 +573,7 @@ function openPractice(id){
   $('pTitle').textContent=S.cur.title;
   const words = S.cur.s.reduce((n,p)=>n+tokenize(p[0]).length,0);
   $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${voiceLabel(S.cur)}</span><span class="pill">${words}語・${S.cur.s.length}文</span>`;
-  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); if(S.kana && !kanaOf(S.cur,0)) ensureKana(S.cur).then(ok=>{ if(ok && S.cur) renderScript($('script'),null); });
+  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); syncJaBtn(); if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))) ensureKana(S.cur).then(ok=>{ if(ok && S.cur) renderScript($('script'),null); });
   renderScript($('script'), null);
   setStatus('▶ でお手本を再生。文をタップするとその文だけ再生します。');
   show('view-practice');
@@ -583,23 +585,25 @@ function renderScript(root, missSet){
     const b=document.createElement('button'); b.className='sent'+(i===S.idx&&root.id==='script'?' active':''); b.dataset.i=i;
     let wi=0;
     const en = p[0].replace(/\S+/g,(w,off)=>{const toks=tokenize(w); let miss=''; toks.forEach(()=>{ if(missSet&&missSet.has(i+':'+wi)) miss=' miss'; wi++; }); return `<span class="w${miss}" data-o="${off}">${esc(w)}</span>`});
-    const kn=kanaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${kn&&S.kana?`<div class="kana">${kanaHtml(kn)}</div>`:''}${p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:''}</div>`;
+    const kn=kanaOf(S.cur,i), ip=ipaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${S.kana&&kn?`<div class="kana">${kanaHtml(kn)}</div>${ip?`<div class="ipa">${esc(ip)}</div>`:''}`:(p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:'')}</div>`;
     if(root.id==='script') b.onclick=()=>{S.idx=i; S.loopsDone=0; playFrom(i,true)};
     root.appendChild(b);
   });
 }
 $('tgJa').onclick=e=>{S.ja=!S.ja;e.currentTarget.setAttribute('aria-pressed',S.ja);renderScript($('script'),null)};
-$('tgKana').onclick=async e=>{ S.kana=!S.kana; LS.set('ss.kana',S.kana); e.currentTarget.setAttribute('aria-pressed',S.kana);
-  if(S.kana && !kanaOf(S.cur,0)){ e.currentTarget.textContent='読み方を作成中…'; const ok=await ensureKana(S.cur); e.currentTarget.textContent='読み方'; if(!ok) toast('読み方を作成できませんでした（接続を確認してください）'); }
+function syncJaBtn(){ $('tgJa').disabled=S.kana; $('tgJa').style.opacity=S.kana?'.45':''; }
+$('tgKana').onclick=async e=>{ S.kana=!S.kana; LS.set('ss.kana',S.kana); e.currentTarget.setAttribute('aria-pressed',S.kana); syncJaBtn();
+  if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ e.currentTarget.textContent='読み方を作成中…'; const ok=await ensureKana(S.cur); e.currentTarget.textContent='読み方'; if(!ok) toast('読み方を作成できませんでした（接続を確認してください）'); }
   renderScript($('script'),null); };
 /* katakana readings: bundled (KANA map from cloud) or fetched for user scripts */
 const KANA = { map: LS.get('ss.kanamap',{}) };
 function kanaOf(sc,i){ const k=KANA.map[sc.id]; return k && k.kana && k.kana[i] || null; }
+function ipaOf(sc,i){ const k=KANA.map[sc.id]; return k && k.ipa && k.ipa[i] || null; }
 function kanaHtml(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/(↘↗|↗|↘)\s*$/,'<span class="arrow">$1</span>'); }
-async function loadKana(){ try{ const rows=await sb('shadowing_kana?select=id,accent,kana'); const m={}; rows.forEach(r=>{ m[r.id]={accent:r.accent,kana:r.kana}; }); Object.keys(KANA.map).filter(k=>k.startsWith('u')).forEach(k=>m[k]=KANA.map[k]); KANA.map=m; LS.set('ss.kanamap',m); }catch(e){} }
-async function ensureKana(sc){ if(kanaOf(sc,0)) return true;
+async function loadKana(){ try{ const rows=await sb('shadowing_kana?select=id,accent,kana,ipa&ipa=not.is.null'); const m={}; rows.forEach(r=>{ m[r.id]={accent:r.accent,kana:r.kana,ipa:r.ipa}; }); Object.keys(KANA.map).filter(k=>k.startsWith('u')).forEach(k=>m[k]=KANA.map[k]); KANA.map=m; LS.set('ss.kanamap',m); }catch(e){} }
+async function ensureKana(sc){ if(kanaOf(sc,0) && ipaOf(sc,0)) return true;
   try{ const r=await fetch(SB_URL+'/functions/v1/kana',{method:'POST',headers:SB_H,body:JSON.stringify({sentences:sc.s.map(p=>p[0]),accent:(CLOUD.map[sc.id]&&CLOUD.map[sc.id].accent)||'US'})}); const g=await r.json(); if(!r.ok||!g.kana) return false;
-    KANA.map[sc.id]={accent:'US',kana:g.kana}; LS.set('ss.kanamap',KANA.map); return true; }catch(e){ return false; } }
+    KANA.map[sc.id]={accent:'US',kana:g.kana,ipa:g.ipa||null}; LS.set('ss.kanamap',KANA.map); return true; }catch(e){ return false; } }
 $('tgBlind').onclick=e=>{S.blind=!S.blind;e.currentTarget.setAttribute('aria-pressed',S.blind);$('script').classList.toggle('blind',S.blind)};
 $('tgSent').onclick=e=>{S.sentMode=!S.sentMode;e.currentTarget.setAttribute('aria-pressed',S.sentMode)};
 $('tgEngine').onclick=e=>{ S.engine = S.engine==='file'?'tts':'file'; LS.set('ss.engine',S.engine); syncEngineBtn(); if(S.playing){ const i=S.idx; stopPlay(); playFrom(i,false); } };
