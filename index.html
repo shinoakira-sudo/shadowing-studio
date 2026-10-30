@@ -595,15 +595,23 @@ function syncJaBtn(){ $('tgJa').disabled=S.kana; $('tgJa').style.opacity=S.kana?
 $('tgKana').onclick=async e=>{ S.kana=!S.kana; LS.set('ss.kana',S.kana); e.currentTarget.setAttribute('aria-pressed',S.kana); syncJaBtn();
   if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ e.currentTarget.textContent='読み方を作成中…'; const ok=await ensureKana(S.cur); e.currentTarget.textContent='読み方'; if(!ok) toast('読み方を作成できませんでした（接続を確認してください）'); }
   renderScript($('script'),null); };
-/* katakana readings: bundled (KANA map from cloud) or fetched for user scripts */
-const KANA = { map: LS.get('ss.kanamap',{}) };
-function kanaOf(sc,i){ const k=KANA.map[sc.id]; return k && k.kana && k.kana[i] || null; }
-function ipaOf(sc,i){ const k=KANA.map[sc.id]; return k && k.ipa && k.ipa[i] || null; }
+/* katakana + IPA readings.
+   Built-in scripts: bundled in content.js (window.CONTENT_KANA), always authoritative.
+   User-registered scripts: generated once by the `kana` Edge Function and saved on this device ('ss.kanamap', ids starting with "u").
+   Older cached entries (cloud rows, guides without IPA) are ignored so they can never hide the bundled guides. */
+const KANA = { map: {} };
+function userKana(){ const m=LS.get('ss.kanamap',{}); return Object.fromEntries(Object.entries(m).filter(([k,v])=>String(k).startsWith('u') && v && Array.isArray(v.kana) && Array.isArray(v.ipa))); }
+function rebuildKana(){ KANA.map = Object.assign({}, window.CONTENT_KANA || {}, userKana()); }
+rebuildKana();
+function kanaOf(sc,i){ const k=sc&&KANA.map[sc.id]; return k && k.kana && k.kana[i] || null; }
+function ipaOf(sc,i){ const k=sc&&KANA.map[sc.id]; return k && k.ipa && k.ipa[i] || null; }
 function kanaHtml(t){ return esc(t).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/(↘↗|↗|↘)\s*$/,'<span class="arrow">$1</span>'); }
-async function loadKana(){ try{ const rows=await sb('shadowing_kana?select=id,accent,kana,ipa&ipa=not.is.null'); const m={}; rows.forEach(r=>{ m[r.id]={accent:r.accent,kana:r.kana,ipa:r.ipa}; }); Object.keys(KANA.map).filter(k=>k.startsWith('u')).forEach(k=>m[k]=KANA.map[k]); KANA.map=m; LS.set('ss.kanamap',m); }catch(e){} }
+function loadKana(){ rebuildKana(); }
 async function ensureKana(sc){ if(kanaOf(sc,0) && ipaOf(sc,0)) return true;
-  try{ const r=await fetch(SB_URL+'/functions/v1/kana',{method:'POST',headers:SB_H,body:JSON.stringify({sentences:sc.s.map(p=>p[0]),accent:(CLOUD.map[sc.id]&&CLOUD.map[sc.id].accent)||'US'})}); const g=await r.json(); if(!r.ok||!g.kana) return false;
-    KANA.map[sc.id]={accent:'US',kana:g.kana,ipa:g.ipa||null}; LS.set('ss.kanamap',KANA.map); return true; }catch(e){ return false; } }
+  try{ const r=await fetch(SB_URL+'/functions/v1/kana',{method:'POST',headers:SB_H,body:JSON.stringify({sentences:sc.s.map(p=>p[0]),accent:(CLOUD.map[sc.id]&&CLOUD.map[sc.id].accent)||'US'})}); const g=await r.json(); if(!r.ok||!Array.isArray(g.kana)||!Array.isArray(g.ipa)) return false;
+    const entry={accent:'US',kana:g.kana,ipa:g.ipa};
+    if(String(sc.id).startsWith('u')){ const m=userKana(); m[sc.id]=entry; LS.set('ss.kanamap',m); }
+    KANA.map[sc.id]=entry; return true; }catch(e){ return false; } }
 $('tgBlind').onclick=e=>{S.blind=!S.blind;e.currentTarget.setAttribute('aria-pressed',S.blind);$('script').classList.toggle('blind',S.blind)};
 $('tgSent').onclick=e=>{S.sentMode=!S.sentMode;e.currentTarget.setAttribute('aria-pressed',S.sentMode)};
 $('tgEngine').onclick=e=>{ S.engine = S.engine==='file'?'tts':'file'; LS.set('ss.engine',S.engine); syncEngineBtn(); if(S.playing){ const i=S.idx; stopPlay(); playFrom(i,false); } };
