@@ -158,6 +158,7 @@ h1,h2,h3{margin:0;font-family:var(--font-ui);text-wrap:balance;font-weight:900}
 .sent .kana .kw.now b{color:var(--hl-fg)}
 .w.unclear{background:var(--hl);color:var(--hl-fg)}
 .w.miss{background:var(--miss-soft);color:var(--miss-dark);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}
+.w.wrong{background:var(--miss-soft);color:var(--miss-dark);text-decoration:underline wavy;text-decoration-thickness:1.5px;text-underline-offset:4px}
 .blind .en{filter:blur(6px);user-select:none}
 .blind .ja{display:none}
 
@@ -236,6 +237,17 @@ input[type=range]{width:100%;accent-color:var(--accent);min-width:0}
 .points .wd{font-family:var(--font-script);font-weight:600;font-size:17px;color:var(--miss-dark);background:var(--miss-soft);padding:2px 8px;border-radius:8px;white-space:nowrap}
 .points .tp{font-size:13.5px;font-weight:700}
 .points .tp small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;font-weight:700}
+.wlist{display:grid;gap:7px;margin:12px 0 0;padding:0;list-style:none}
+.wlist li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline;min-width:0}
+.wlist .ww{font-family:var(--font-script);font-weight:600;font-size:16px;padding:1px 8px;border-radius:8px;white-space:nowrap}
+.wlist .ww.miss,.wlist .ww.wrong{background:var(--miss-soft);color:var(--miss-dark)}
+.wlist .ww.unclear{background:var(--hl);color:var(--hl-fg)}
+.wlist small{font-size:12.5px;color:var(--muted);font-weight:700;overflow-wrap:anywhere}
+.counts{display:flex;gap:6px;flex-wrap:wrap}
+.counts span{font-size:11.5px;font-weight:900;padding:2px 8px;border-radius:999px;background:var(--surface2);color:var(--muted);font-variant-numeric:tabular-nums}
+.counts span.x{background:var(--miss-soft);color:var(--miss-dark)}
+.counts span.u{background:var(--hl);color:var(--hl-fg)}
+.bar.cov .tr i{background:var(--good)}
 .transcript{font-family:var(--font-script);font-size:15px;color:var(--muted);background:var(--surface2);border-radius:14px;padding:10px 12px;overflow-wrap:anywhere}
 .fb .script{margin-bottom:0}
 .actions{display:grid;gap:10px;margin-top:4px}
@@ -421,19 +433,20 @@ const COLORS = ['#0C7C7A','#C4452E','#2E6FB5','#7A4DB5','#C27A00','#2E8B57','#B5
 function curUser(){ return U.list.find(u=>u.id===U.cur)||null; }
 async function loadUsers(){ try{ U.list=await sb('shadowing_users?select=*&order=created_at'); LS.set('ss.users',U.list); U.online=true; }catch(e){ U.online=false; } return U.list; }
 async function loadAttempts(){ if(!U.cur) return; U.attempts=LS.get('ss.att.'+U.cur,[]);
-  try{ const rows=await sb(`shadowing_attempts?select=id,script_id,score,pronunciation,intonation,fluency,speed,duration_sec,created_at&user_id=eq.${U.cur}&order=created_at.desc&limit=2000`);
-    U.attempts=rows.map(r=>({id:r.id,sid:r.script_id,score:r.score,p:r.pronunciation,i:r.intonation,f:r.fluency,speed:+r.speed,dur:+r.duration_sec,at:+new Date(r.created_at)})); LS.set('ss.att.'+U.cur,U.attempts); U.online=true; await flushQueue(); }catch(e){ U.online=false; } }
+  try{ const rows=await sb(`shadowing_attempts?select=id,script_id,score,pronunciation,intonation,fluency,speed,duration_sec,created_at,coverage,eval_version&user_id=eq.${U.cur}&order=created_at.desc&limit=2000`);
+    U.attempts=rows.map(r=>({id:r.id,sid:r.script_id,score:r.score,p:r.pronunciation,i:r.intonation,f:r.fluency,speed:+r.speed,dur:+r.duration_sec,at:+new Date(r.created_at),cov:r.coverage,v:r.eval_version||1})); LS.set('ss.att.'+U.cur,U.attempts); U.online=true; await flushQueue(); }catch(e){ U.online=false; } }
 async function flushQueue(){ const q=LS.get('ss.queue',[]); if(!q.length) return; const rest=[]; for(const row of q){ try{ await sb('shadowing_attempts',{method:'POST',body:JSON.stringify(row),headers:{Prefer:'return=minimal'}}); }catch(e){ rest.push(row); } } LS.set('ss.queue',rest); }
 async function saveAttempt(ev,g){
   if(!U.cur) return;
-  const row={user_id:U.cur, script_id:S.cur.id, script_title:S.cur.title, score:g.overall|0, pronunciation:g.pronunciation|0, intonation:g.intonation|0, fluency:g.fluency|0, speed:S.speed, duration_sec:Math.round(ev.dur*10)/10, points:g.points||null, transcript:g.transcript||null};
-  const local={id:'local-'+Date.now(), sid:row.script_id, score:row.score, p:row.pronunciation, i:row.intonation, f:row.fluency, speed:row.speed, dur:row.duration_sec, at:Date.now()};
+  const row={user_id:U.cur, script_id:S.cur.id, script_title:S.cur.title, score:g.overall|0, pronunciation:g.pronunciation|0, intonation:g.intonation|0, fluency:g.fluency|0, speed:S.speed, duration_sec:Math.round(ev.dur*10)/10, points:g.points||null, transcript:g.transcript||null, coverage:g.coverage==null?null:g.coverage|0, eval_version:g.version|0||1};
+  const local={id:'local-'+Date.now(), sid:row.script_id, score:row.score, p:row.pronunciation, i:row.intonation, f:row.fluency, speed:row.speed, dur:row.duration_sec, at:Date.now(), cov:row.coverage, v:row.eval_version};
   U.attempts.unshift(local); LS.set('ss.att.'+U.cur,U.attempts);
   try{ await sb('shadowing_attempts',{method:'POST',body:JSON.stringify(row),headers:{Prefer:'return=minimal'}}); U.online=true; }
   catch(e){ U.online=false; const q=LS.get('ss.queue',[]); q.push(row); LS.set('ss.queue',q); toast('クラウドに保存できなかったため、端末に保存しました（次回接続時に送信）'); }
 }
 const attemptsFor = sid => U.attempts.filter(a=>a.sid===sid);   // newest first
-function statusOf(sid){ const a=attemptsFor(sid); if(!a.length) return 'new'; if(a.length>=2 && a[0].score>=80 && a[1].score>=80) return 'done'; if(a[0].score>=80) return 'almost'; return 'review'; }
+// Mastery is decided only by attempts scored with evaluator v2 (v1 let skipped / misread words pass as correct, so its scores ran high).
+function statusOf(sid){ const all=attemptsFor(sid); if(!all.length) return 'new'; const a=all.filter(x=>(x.v||1)>=2); if(a.length>=2 && a[0].score>=80 && a[1].score>=80) return 'done'; if(a.length && a[0].score>=80) return 'almost'; return 'review'; }
 const ST_LABEL={new:'未着手',review:'要復習',almost:'あと1回で定着',done:'定着'};
 const dayKey = t => { const d=new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 function streak(){ const days=new Set(U.attempts.map(a=>dayKey(a.at))); let n=0; const d=new Date(); if(!days.has(dayKey(d))) d.setDate(d.getDate()-1); while(days.has(dayKey(d))){ n++; d.setDate(d.getDate()-1); } return n; }
@@ -441,7 +454,7 @@ function recommend(){
   const list=allScripts(); const now=Date.now(), day=86400000;
   // 1) 要復習 whose last attempt is at least a day old (sleep on it, then retry)
   const due=list.filter(sc=>statusOf(sc.id)==='review' && now-attemptsFor(sc.id)[0].at>=day).sort((a,b)=>attemptsFor(a.id)[0].score-attemptsFor(b.id)[0].score);
-  if(due.length) return {sc:due[0], why:'要復習。前回 '+attemptsFor(due[0].id)[0].score+' 点。一晩おいての再挑戦です'};
+  if(due.length){ const last=attemptsFor(due[0].id)[0]; return {sc:due[0], why:(last.v||1)<2&&last.score>=80?'採点方式を改めたので、新しい評価でもう一度。前回 '+last.score+' 点（旧評価）':'要復習。前回 '+last.score+' 点。一晩おいての再挑戦です'}; }
   // 2) あと1回で定着, 1+ day old
   const almost=list.filter(sc=>statusOf(sc.id)==='almost' && now-attemptsFor(sc.id)[0].at>=day);
   if(almost.length) return {sc:almost[0], why:'もう一度 80 点以上で定着になります'};
@@ -535,7 +548,7 @@ function renderLib(){
   const list=allScripts().filter(sc=>sc.cat===F.cat&&(F.lv==='all'||sc.level===F.lv)&&(F.st==='all'||statusOf(sc.id)===F.st));
   if(!list.length){ lib.innerHTML='<div class="note" style="margin:0">該当する教材がありません。絞り込みを変えてください。</div>'; return; }
   list.forEach(sc=>{
-    const words = sc.s.reduce((n,p)=>n+tokenize(p[0]).length,0); const a=attemptsFor(sc.id); const st=statusOf(sc.id);
+    const words = sc.s.reduce((n,p)=>n+wordCount(p[0]),0); const a=attemptsFor(sc.id); const st=statusOf(sc.id);
     const b=document.createElement('button'); b.className='card';
     b.innerHTML=`<div class="t">${esc(sc.title)}</div>
       <div class="score ${a.length?'':'none'}">${a.length?`${a[0].score}<small>前回 / ${a.length}回</small>`:'未挑戦'}</div>
@@ -565,7 +578,7 @@ function renderHistory(){
       ${tr.map((t,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(t.score).toFixed(1)}" r="3" fill="var(--accent)"/>`).join('')}
     </svg>
     <div class="note" style="margin-top:6px">通算 ${a.length} 回 ・ 平均 ${avgAll} 点 ・ ベスト ${best} 点 ・ 連続 ${streak()} 日 ・ 定着 ${allScripts().filter(s=>statusOf(s.id)==='done').length} 本</div></div>
-    ${Object.keys(groups).sort().reverse().map(k=>`<div class="eyebrow" style="margin:14px 0 6px">${k}（${groups[k].length}本）</div><div class="list" style="margin-top:0">${groups[k].map(t=>{ const sc=byId[t.sid]; return `<button class="card hcard" data-sid="${esc(t.sid)}"><div class="t">${esc(sc?sc.title:t.sid)}</div><div class="score">${t.score}<small>${new Date(t.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} ・ ${(+t.speed).toFixed(1)}×</small></div><div class="m"><span>発音 ${t.p}</span><span>抑揚 ${t.i}</span><span>流暢 ${t.f}</span></div></button>`; }).join('')}</div>`).join('')}`;
+    ${Object.keys(groups).sort().reverse().map(k=>`<div class="eyebrow" style="margin:14px 0 6px">${k}（${groups[k].length}本）</div><div class="list" style="margin-top:0">${groups[k].map(t=>{ const sc=byId[t.sid]; return `<button class="card hcard" data-sid="${esc(t.sid)}"><div class="t">${esc(sc?sc.title:t.sid)}</div><div class="score">${t.score}<small>${new Date(t.at).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})} ・ ${(+t.speed).toFixed(1)}×</small></div><div class="m">${t.cov!=null?`<span>再現 ${t.cov}</span>`:''}<span>発音 ${t.p}</span><span>抑揚 ${t.i}</span><span>流暢 ${t.f}</span>${(t.v||1)<2?'<span title="旧ロジックの採点（抜け・言い違いが減点されていない可能性があります）">旧評価</span>':''}</div></button>`; }).join('')}</div>`).join('')}`;
   root.querySelectorAll('.hcard').forEach(b=>b.onclick=()=>{ if(byId[b.dataset.sid]) openPractice(b.dataset.sid); });
 }
 
@@ -574,21 +587,21 @@ function renderHistory(){
 function openPractice(id){
   S.cur = allScripts().find(x=>x.id===id); S.idx=0; S.loopsDone=0; S.lastEval=null;
   $('pTitle').textContent=S.cur.title;
-  const words = S.cur.s.reduce((n,p)=>n+tokenize(p[0]).length,0);
+  const words = S.cur.s.reduce((n,p)=>n+wordCount(p[0]),0);
   $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${voiceLabel(S.cur)}</span><span class="pill">${words}語・${S.cur.s.length}文</span>`;
   primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); syncJaBtn(); if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))) ensureKana(S.cur).then(ok=>{ if(ok && S.cur) renderScript($('script'),null); });
   renderScript($('script'), null);
   setStatus('▶ でお手本を再生。文をタップするとその文だけ再生します。');
   show('view-practice');
 }
-function renderScript(root, missSet){
+function renderScript(root, marks){
   if(root && root.id==='script'){ lastMark=''; lastMarkK=-1; }
   root.innerHTML='';
   root.classList.toggle('blind', S.blind && root.id==='script');
   S.cur.s.forEach((p,i)=>{
     const b=document.createElement('button'); b.className='sent'+(i===S.idx&&root.id==='script'?' active':''); b.dataset.i=i;
     let wi=0;
-    const en = p[0].replace(/\S+/g,(w,off)=>{const toks=tokenize(w); let miss=''; toks.forEach(()=>{ if(missSet&&missSet.has(i+':'+wi)) miss=' miss'; wi++; }); return `<span class="w${miss}" data-o="${off}">${esc(w)}</span>`});
+    const en = p[0].replace(/\S+/g,(w,off)=>{ const m=marks&&marks.get(i+':'+(wi++)); const cls=m?' '+(m.st==='missing'?'miss':m.st):''; return `<span class="w${cls}" data-o="${off}"${m&&m.note?` title="${esc(m.note)}"`:''}>${esc(w)}</span>`; });
     const kn=kanaOf(S.cur,i), ip=ipaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${S.kana&&kn?`<div class="kana">${kanaHtml(kn)}</div>${ip?`<div class="ipa">${ipaHtml(ip)}</div>`:''}`:(p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:'')}</div>`;
     if(root.id==='script') b.onclick=()=>{S.idx=i; S.loopsDone=0; playFrom(i,true)};
     root.appendChild(b);
@@ -981,7 +994,7 @@ async function startRecording(){
   $('recMode').textContent = R.mode==='record'?'録音中':'録音デモ（マイク未使用）';
   $('recHint').textContent = R.mode==='demo' ? micReason()+' 停止後はサンプル評価を表示します。' : 'お手本と同時に声に出して、そのまま続けてください。';
   if(R.stream){
-    try{ R.rec=new MediaRecorder(R.stream); R.rec.ondataavailable=e=>R.chunks.push(e.data); R.rec.start(250); }catch(e){}
+    try{ R.rec=new MediaRecorder(R.stream); R.recOn=0; R.rec.onstart=()=>{ R.recOn=performance.now(); }; R.rec.ondataavailable=e=>R.chunks.push(e.data); R.rec.start(250); }catch(e){}
     try{ R.ctx=new (window.AudioContext||window.webkitAudioContext)(); const src=R.ctx.createMediaStreamSource(R.stream); const an=R.ctx.createAnalyser(); an.fftSize=512; src.connect(an); const buf=new Uint8Array(an.fftSize);
       const tick=()=>{ an.getByteTimeDomainData(buf); let m=0; for(const v of buf) m=Math.max(m,Math.abs(v-128)); $('meter').style.width=Math.min(100,m*1.6)+'%'; R.raf=requestAnimationFrame(tick); }; tick(); }catch(e){}
   } else {
@@ -992,7 +1005,8 @@ async function startRecording(){
   const recStart=performance.now(); const t=$('recTime'); t.classList.add('count');
   await new Promise(res=>{ let n=3; t.textContent=n; SND.tick(); const iv=setInterval(()=>{ n--; if(n<=0||!$('btnRec').classList.contains('on')){ clearInterval(iv); SND.go(); res(); } else { t.textContent=n; SND.tick(); } },700); });
   t.classList.remove('count'); if(!$('btnRec').classList.contains('on')) return;   // cancelled during countdown
-  R.preroll=(performance.now()-recStart)/1000;
+  // audio t=0 is when the recorder actually started (its start event can fire after recStart); keep 0.3 s of the countdown so the first word is never cut
+  R.preroll=Math.max(0, (performance.now()-(R.recOn||recStart))/1000 - 0.3);
   R.t0=performance.now(); R.timer=setInterval(()=>{const s=Math.floor((performance.now()-R.t0)/1000); $('recTime').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;},200);
   if(R.playModel){ S.loopsDone=0; S.loop=1; $('btnLoop').innerHTML='リピート<br>1'; playFrom(0,false); } else { setStatus('お手本なしで録音中。スクリプトを見ながら音読してください。'); }
 }
@@ -1007,7 +1021,7 @@ function stopRecording(evaluate){
     if(evaluate) showFeedback(evaluateAttempt(dur));
     else setStatus('録音をやめました。');
   };
-  if(R.rec&&R.rec.state!=='inactive'){ R.rec.onstop=()=>{ try{ R.blob=new Blob(R.chunks,{type:R.rec.mimeType||'audio/webm'}); R.audioUrl=URL.createObjectURL(R.blob); saveRecording(S.cur.id,R.blob,S.speed); }catch(e){} setTimeout(finish,400); }; R.rec.stop(); }
+  if(R.rec&&R.rec.state!=='inactive'){ R.rec.onstop=()=>{ try{ R.blob=new Blob(R.chunks,{type:R.rec.mimeType||'audio/webm'}); R.audioUrl=URL.createObjectURL(R.blob); saveRecording(S.cur.id,R.blob,S.speed,R.preroll); }catch(e){} setTimeout(finish,400); }; R.rec.stop(); }
   else setTimeout(finish,0);
 }
 
@@ -1020,12 +1034,12 @@ const IDB = {db:null,
   async put(v){ const d=await this.open(); if(!d) return; d.transaction('rec','readwrite').objectStore('rec').put(v); },
   async get(id){ const d=await this.open(); if(!d) return null; return new Promise(r=>{ const q=d.transaction('rec').objectStore('rec').get(id); q.onsuccess=()=>r(q.result||null); q.onerror=()=>r(null); }); }
 };
-function saveRecording(scriptId, blob, speed){ IDB.put({id:scriptId, blob, speed, at:Date.now()}); }
+function saveRecording(scriptId, blob, speed, preroll){ IDB.put({id:scriptId, blob, speed, preroll:preroll||0, at:Date.now()}); }
 const recAudio = new Audio();
 function micReason(){ const m={NotAllowedError:'マイクの使用が許可されていません（ブラウザのアドレスバーのマイク設定を確認してください）。',NotFoundError:'マイクが見つかりません。',NotReadableError:'他のアプリがマイクを使用中です。',InsecureContext:'このページは安全な接続（https／file）ではないためマイクを使えません。',NoMediaDevices:'このビュー（Claudeアプリ内の表示）ではマイクが使えません。zipのHTMLをChromeで開いてください。'}; return m[R.micError]||('マイクを開始できませんでした（'+R.micError+'）。'); }
 async function renderRecPanel(root, demo){
-  let url=R.audioUrl, meta=null;
-  if(!url){ const saved=await IDB.get(S.cur.id); if(saved){ url=URL.createObjectURL(saved.blob); meta=saved; } }
+  let url=R.audioUrl, meta=null, pre=R.preroll||0;
+  if(!url){ const saved=await IDB.get(S.cur.id); if(saved){ url=URL.createObjectURL(saved.blob); meta=saved; pre=saved.preroll||0; } }
   if(!url){ root.innerHTML=`<h2>自分の録音</h2><div class="note" style="margin:0">${demo?micReason()+' PCのChromeで開くと、ここで自分の声とお手本を聞き比べられます。':'録音データが作れませんでした（MediaRecorder: '+(window.MediaRecorder?'利用可':'非対応')+'）。'}</div>`; return; }
   const when = meta ? new Date(meta.at).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})+'の録音（'+meta.speed.toFixed(1)+'×）' : '今回の録音';
   root.innerHTML=`<h2>自分の録音を聞く <span class="note" style="margin:0;font-weight:400">${when}</span></h2>
@@ -1036,13 +1050,15 @@ async function renderRecPanel(root, demo){
   const a=$('rpAudio');
   $('rpMine').onclick=()=>{ stopPlay(); a.currentTime=0; a.play(); };
   $('rpModel').onclick=()=>{ a.pause(); show('view-practice'); S.loopsDone=0; S.loop=1; $('btnLoop').innerHTML='リピート<br>1'; playFrom(0,false); setTimeout(()=>show('view-feedback'),50); };
-  $('rpAB').onclick=()=>abCompare(a);
+  $('rpAB').onclick=()=>abCompare(a, pre);
 }
 // Plays model sentence k, then the matching slice of the recording (aligned by sentence ratio), for every sentence.
-function abCompare(a){
+function abCompare(a, pre=0){
   if(!hasAudio(S.cur)){ setStatus('聞き比べは付属教材で使えます。'); return; }
   stopPlay(); const tl=TL[S.cur.id], segs=tl.segs; const my=++seq; a.pause();
-  const scale = (a.duration||tl.dur/S.speed) / (tl.dur/S.speed);   // recording is roughly model length; stretch mapping if it differs
+  // the take starts with the countdown (pre seconds); after that it runs roughly as long as the model — stretch the mapping if it differs
+  const body = a.duration && a.duration-pre > 1 ? a.duration-pre : tl.dur/S.speed;
+  const scale = body / (tl.dur/S.speed);
   audio.src.endsWith(audioSrc(S.cur)) || (audio.src=audioSrc(S.cur), audio.load());
   audio.playbackRate=S.speed;
   const step=(k)=>{
@@ -1050,13 +1066,13 @@ function abCompare(a){
     $('rpAB').textContent=`聞き比べ中 ${k+1}/${segs.length}… タップで停止`;
     audio.currentTime=segs[k].start; audio.play();
     const modelEnd=()=>{ if(audio.currentTime>=segs[k].end||audio.paused){ audio.pause(); audio.removeEventListener('timeupdate',modelEnd);
-        const s0=(segs[k].start/S.speed)*scale, s1=(segs[k].end/S.speed)*scale+0.3;
+        const s0=pre+(segs[k].start/S.speed)*scale, s1=pre+(segs[k].end/S.speed)*scale+0.3;
         a.currentTime=Math.min(s0, Math.max(0,(a.duration||s1)-0.1)); a.play();
         const mineEnd=()=>{ if(a.currentTime>=s1||a.ended){ a.pause(); a.removeEventListener('timeupdate',mineEnd); setTimeout(()=>{ if(my===seq) step(k+1); },300); } };
         a.addEventListener('timeupdate',mineEnd); } };
     audio.addEventListener('timeupdate',modelEnd);
   };
-  const btn=$('rpAB'); const stopAB=()=>{ seq++; audio.pause(); a.pause(); btn.textContent='文ごとに聞き比べ（お手本→自分）'; btn.onclick=()=>abCompare(a); };
+  const btn=$('rpAB'); const stopAB=()=>{ seq++; audio.pause(); a.pause(); btn.textContent='文ごとに聞き比べ（お手本→自分）'; btn.onclick=()=>abCompare(a, pre); };
   btn.onclick=stopAB; step(0);
 }
 
@@ -1064,15 +1080,33 @@ function abCompare(a){
 const AC = window.AudioContext || window.webkitAudioContext;
 
 async function decodeToMono(arrayBuffer, targetSr){
+  // Decode straight at the target rate where possible: decodeAudioData resamples with a proper anti-alias filter.
+  // (Plain linear interpolation from 48 kHz folds 8–24 kHz energy back into the band and smears s / sh / th.)
+  if(targetSr && window.OfflineAudioContext){
+    try{ const oc=new OfflineAudioContext(1, 1, targetSr); const buf=await oc.decodeAudioData(arrayBuffer.slice(0));
+      if(buf.sampleRate===targetSr) return {pcm:mixDown(buf), sr:targetSr, dur:buf.duration}; }catch(e){}
+  }
   const ctx = new AC(); let buf;
   try { buf = await ctx.decodeAudioData(arrayBuffer.slice(0)); } finally { try{ctx.close()}catch(e){} }
-  const ch = buf.numberOfChannels, n = buf.length, mono = new Float32Array(n);
-  for(let c=0;c<ch;c++){ const d=buf.getChannelData(c); for(let i=0;i<n;i++) mono[i]+=d[i]/ch; }
+  const mono = mixDown(buf);
   if(!targetSr || targetSr===buf.sampleRate) return {pcm:mono, sr:buf.sampleRate, dur:buf.duration};
-  const ratio = buf.sampleRate/targetSr, outN = Math.floor(n/ratio), out = new Float32Array(outN);
-  for(let i=0;i<outN;i++){ const p=i*ratio, j=Math.floor(p), f=p-j; out[i] = mono[j]*(1-f) + (mono[j+1]||0)*f; }
+  const ratio = buf.sampleRate/targetSr, src = ratio>1 ? lowpass(mono, 0.45/ratio) : mono, outN = Math.floor(mono.length/ratio), out = new Float32Array(outN);
+  for(let i=0;i<outN;i++){ const p=i*ratio, j=Math.floor(p), f=p-j; out[i] = src[j]*(1-f) + (src[j+1]||0)*f; }
   return {pcm:out, sr:targetSr, dur:buf.duration};
 }
+function mixDown(buf){ const ch=buf.numberOfChannels, n=buf.length; if(ch===1) return buf.getChannelData(0).slice(); const mono=new Float32Array(n); for(let c=0;c<ch;c++){ const d=buf.getChannelData(c); for(let i=0;i<n;i++) mono[i]+=d[i]/ch; } return mono; }
+// windowed-sinc low-pass (fc as a fraction of the sample rate), used only when the browser cannot decode at 16 kHz
+function lowpass(x, fc, taps=63){ const M=taps-1, h=new Float32Array(taps); let sum=0;
+  for(let n=0;n<taps;n++){ const k=n-M/2; h[n]=(k===0?2*fc:Math.sin(2*Math.PI*fc*k)/(Math.PI*k))*(0.54-0.46*Math.cos(2*Math.PI*n/M)); sum+=h[n]; }
+  for(let n=0;n<taps;n++) h[n]/=sum;
+  const y=new Float32Array(x.length), H=M/2; for(let i=0;i<x.length;i++){ let a=0; for(let n=0;n<taps;n++){ const j=i+H-n; if(j>=0&&j<x.length) a+=h[n]*x[j]; } y[i]=a; } return y; }
+// Bring quiet takes up to a usable level. Level = 99.9th percentile of |x| so a single click does not decide the gain.
+function normalizeLevel(pcm){ const step=Math.max(1,Math.floor(pcm.length/200000)), arr=new Float32Array(Math.ceil(pcm.length/step)); let k=0;
+  for(let i=0;i<pcm.length;i+=step) arr[k++]=Math.abs(pcm[i]);
+  if(!k) return {pcm, level:0}; arr.sort(); const level=arr[Math.min(k-1, Math.floor(k*0.999))];
+  if(level<1e-4) return {pcm, level}; const gain=Math.min(8, 0.5/level); if(gain<1.15) return {pcm, level};
+  const out=new Float32Array(pcm.length); for(let i=0;i<pcm.length;i++){ const v=pcm[i]*gain; out[i]=v>1?1:v<-1?-1:v; } return {pcm:out, level}; }
+function accentOf(sc){ const c=CLOUD.map[sc.id]; if(c&&c.accent) return c.accent; const k=window.CONTENT_KANA&&window.CONTENT_KANA[sc.id]; return (k&&k.accent)||'US'; }
 function pcmToWavBase64(pcm, sr){
   const n=pcm.length, bytes=new ArrayBuffer(44+n*2), v=new DataView(bytes);
   const str=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
@@ -1120,43 +1154,60 @@ function drawPitch(root, mine, model, segs){
 }
 async function runAiAssessment(ev){
   const aiRoot=$('aiSection'), pRoot=$('pitchSection'); if(!aiRoot) return;
+  const retryBtn='<button class="btn ghost" style="margin-top:10px" onclick="runAiAssessment(S.lastEval)">評価をやり直す</button>';
   let pcm16;
-  try{ const ab=await R.blob.arrayBuffer(); pcm16=await decodeToMono(ab,16000); if(R.preroll>0){ const cut=Math.min(pcm16.pcm.length, Math.floor(R.preroll*pcm16.sr)); pcm16={pcm:pcm16.pcm.subarray(cut), sr:pcm16.sr, dur:pcm16.dur-R.preroll}; } }
+  try{ const ab=await R.blob.arrayBuffer(); pcm16=await decodeToMono(ab,16000);
+    if(R.preroll>0){ const cut=Math.min(pcm16.pcm.length, Math.floor(R.preroll*pcm16.sr)); pcm16={pcm:pcm16.pcm.subarray(cut), sr:pcm16.sr, dur:Math.max(0,pcm16.dur-R.preroll)}; }
+    const nl=normalizeLevel(pcm16.pcm); pcm16.pcm=nl.pcm; R.quiet=nl.level<0.02; }
   catch(e){ aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">録音データを読み込めませんでした（${esc(String(e&&e.message||e))}）。</div>`; return; }
   // pitch first (local, fast)
   try{ const mine={track:toSemitones(pitchTrack(pcm16.pcm,pcm16.sr)), dur:pcm16.dur}; const model=await modelPitch(S.cur); drawPitch(pRoot, mine, model, hasAudio(S.cur)?TL[S.cur.id].segs:null); }
   catch(e){ pRoot.innerHTML=`<div class="note" style="margin:0">ピッチ解析に失敗しました。</div>`; }
-  // then Gemini
+  // then Gemini (v2: blind transcription → alignment → judge, all server-side)
   try{
-    const res=await fetch(SB_URL+'/functions/v1/assess',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON,'apikey':SB_ANON},
-      body:JSON.stringify({audio:pcmToWavBase64(pcm16.pcm,pcm16.sr), mimeType:'audio/wav', sentences:S.cur.s.map(p=>p[0]), speed:S.speed})});
-    const g=await res.json();
-    if(!res.ok||g.error){ aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">評価サーバのエラー：${esc(g.error||res.status)}${g.detail?'<br><code style="font-size:11px">'+esc(g.detail).slice(0,300)+'</code>':''}</div>`; return; }
+    const body=JSON.stringify({audio:pcmToWavBase64(pcm16.pcm,pcm16.sr), mimeType:'audio/wav', sentences:S.cur.s.map(p=>p[0]), speed:S.speed, accent:accentOf(S.cur)});
+    const call=()=>fetch(SB_URL+'/functions/v1/assess',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON,'apikey':SB_ANON},body});
+    let res=await call();
+    if(res.status===503||res.status===546){ await new Promise(r=>setTimeout(r,1500)); res=await call(); }   // worker still booting / busy
+    const g=await res.json().catch(()=>({error:'HTTP '+res.status}));
+    if(!res.ok||g.error){ aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">評価サーバのエラー：${esc(g.error||g.message||res.status)}${g.detail?'<br><code style="font-size:11px">'+esc(g.detail).slice(0,300)+'</code>':''}</div>${retryBtn}`; return; }
     renderAi(ev,g);
-  }catch(e){  aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">評価サーバに接続できませんでした（${esc(String(e&&e.message||e))}）。Claudeアプリ内の表示では外部通信が制限されます。Chromeで開いてお試しください。</div><button class="btn ghost" style="margin-top:10px" onclick="runAiAssessment(S.lastEval)">評価をやり直す</button>`; }
+  }catch(e){  aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">評価サーバに接続できませんでした（${esc(String(e&&e.message||e))}）。Claudeアプリ内の表示では外部通信が制限されます。Chromeで開いてお試しください。</div>${retryBtn}`; }
 }
-const KIND={pronunciation:'発音',intonation:'イントネーション',rhythm:'リズム',linking:'リンキング',fluency:'流暢さ'};
+const KIND={pronunciation:'発音',intonation:'イントネーション',rhythm:'リズム',linking:'リンキング',fluency:'流暢さ',completeness:'抜け・言い違い',stress:'強勢'};
+// word marks keyed "sentence:word" (whitespace words = the spans on screen)
+function wordMarks(g){
+  const marks=new Map(); if(!g||!Array.isArray(g.words)) return marks;
+  if(g.version>=2){ g.words.forEach(w=>{ if(w&&(w.st==='missing'||w.st==='wrong'||w.st==='unclear')) marks.set((w.s|0)+':'+(w.i|0), w); }); return marks; }
+  const ctr={}; g.words.forEach(w=>{ const s=w.s|0, i=ctr[s]=(ctr[s]==null?0:ctr[s]+1); if(w.st&&w.st!=='ok') marks.set(s+':'+i, {...w, s, i}); });   // v1 fallback: one item per written word
+  return marks;
+}
+function wordNote(w){ return w.note || (w.st==='missing'?'聞こえませんでした':w.st==='wrong'&&w.heard?`「${w.heard}」と聞こえました`:'はっきりしませんでした'); }
 function renderAi(ev,g){
   const pct=v=>Math.max(0,Math.min(100,Math.round(v||0)));
-  const bar=(l,v)=>`<div class="bar"><div class="l"><span>${l}</span><span>${pct(v)}</span></div><div class="tr"><i style="width:${pct(v)}%"></i></div></div>`;
-  $('scoreBars').innerHTML=`${bar('発音（母音・子音・語の強勢）',g.pronunciation)}${bar('イントネーション・リズム',g.intonation)}${bar('流暢さ',g.fluency)}
+  const bar=(l,v,cls='')=>`<div class="bar ${cls}"><div class="l"><span>${l}</span><span>${pct(v)}</span></div><div class="tr"><i style="width:${pct(v)}%"></i></div></div>`;
+  const c=g.counts;
+  $('scoreBars').innerHTML=`${g.coverage!=null?bar('再現率（聞き取れた語の割合）',g.coverage,'cov'):''}${bar('発音（母音・子音・語の強勢）',g.pronunciation)}${bar('イントネーション・リズム',g.intonation)}${bar('流暢さ',g.fluency)}
+    ${c?`<div class="counts"><span>${c.total}語</span><span>✓ ${c.ok}</span>${c.unclear?`<span class="u">不明瞭 ${c.unclear}</span>`:''}${c.wrong?`<span class="x">別の語 ${c.wrong}</span>`:''}${c.missing?`<span class="x">抜け ${c.missing}</span>`:''}</div>`:''}
     <div class="note" style="margin-top:2px">${ev.speed.toFixed(1)}× ・ 録音 ${ev.dur.toFixed(1)}秒 ／ お手本 ${ev.modelDur.toFixed(1)}秒${g.meta&&g.meta.ms?' ・ 評価 '+(g.meta.ms/1000).toFixed(1)+'秒':''}</div>`;
-  const sc=pct(g.overall), r=52, c=2*Math.PI*r, col=ev.demo?'var(--muted)':sc>=80?'var(--good)':sc>=60?'var(--warn)':'var(--miss)';
-  const arc=$('ringArc'); if(arc){ arc.setAttribute('stroke-dasharray',`${c*sc/100} ${c}`); arc.setAttribute('stroke',col); } const num=$('ringNum'); if(num){ num.textContent=sc; num.setAttribute('font-size','30'); }
+  const sc=pct(g.overall), r=52, cc=2*Math.PI*r, col=ev.demo?'var(--muted)':sc>=80?'var(--good)':sc>=60?'var(--warn)':'var(--miss)';
+  const arc=$('ringArc'); if(arc){ arc.setAttribute('stroke-dasharray',`${cc*sc/100} ${cc}`); arc.setAttribute('stroke',col); } const num=$('ringNum'); if(num){ num.textContent=sc; num.setAttribute('font-size','30'); }
   if(!ev.demo) saveAttempt(ev,g);
   const prev=attemptsFor(S.cur.id).slice(1); const best=prev.length?Math.max(...prev.map(a=>a.score)):-1; const rk=rankOf(sc);
   const cheer=$('cheer'); if(cheer){ cheer.innerHTML=`<div class="rank">ランク ${rk[0]}${!ev.demo&&sc>best&&prev.length?'　🎉 自己ベスト更新':''}</div><p class="say">${rk[1]}</p>`; }
   if(!ev.demo){ if(sc>=80||(prev.length&&sc>best)){ SND.fanfare(); confetti(); } else SND.soft(); }
-  $('aiSection').innerHTML=`<h2>強化ポイント ${ev.demo?'':`<span class="note" style="margin:0;font-weight:400">Gemini ${esc((g.meta&&g.meta.model||'').replace('gemini-',''))}</span>`}</h2>
+  $('aiSection').innerHTML=`<h2>強化ポイント ${ev.demo?'':`<span class="note" style="margin:0;font-weight:400">Gemini ${esc((g.meta&&g.meta.model||'').replace(/gemini-/g,''))}</span>`}</h2>
+    ${R.quiet&&!ev.demo?`<div class="badge warn" style="margin-bottom:10px">録音の音量がかなり小さめです。マイクに近づくと判定が安定します。</div>`:''}
     ${g.leakage?`<div class="badge warn" style="margin-bottom:10px">録音にお手本の音声が混ざっています。イヤホンが外れていないか確認してください。</div>`:''}
     ${g.good?`<div class="note" style="margin:0 0 10px;color:var(--good)">◎ ${esc(g.good)}</div>`:''}
-    <ul class="points">${(g.points||[]).map(p=>`<li><span class="wd" style="font-family:var(--font-jp);font-size:12px;color:var(--accent);background:var(--accent-soft)">${KIND[p.kind]||p.kind}</span><div class="tp">${esc(p.title)}<small>${esc(p.detail)}</small></div></li>`).join('')}</ul>
-    ${g.transcript&&!ev.demo?`<div class="eyebrow" style="margin-top:12px">聞き取られた発話（言ったとおりに書き起こし）</div><div class="transcript" style="margin-top:4px">${esc(g.transcript)}</div>`:''}`;
-  // word-level marks on the script
-  if(Array.isArray(g.words)&&g.words.length){ const miss=new Set(), unclear=new Set(); const counters={};
-    g.words.forEach(w=>{ const si=w.s|0; counters[si]=(counters[si]||0); const key=si+':'+counters[si]; counters[si]++; if(w.st==='missing'||w.st==='wrong') miss.add(key); else if(w.st==='unclear') unclear.add(key); });
-    const root=$('fbScript'); if(root){ renderScript(root, miss); root.querySelectorAll('.sent').forEach(b=>{ const i=+b.dataset.i; let k=0; b.querySelectorAll('.w').forEach(sp=>{ const toks=tokenize(sp.textContent).length; for(let j=0;j<toks;j++){ if(unclear.has(i+':'+k)) sp.classList.add('unclear'); k++; } }); });
-      const lg=$('scriptLegend'); if(lg) lg.textContent='赤＝抜け・誤り、黄＝不明瞭'; }
+    <ul class="points">${(g.points||[]).map(p=>`<li><span class="wd" style="font-family:var(--font-jp);font-size:12px;color:var(--accent);background:var(--accent-soft)">${KIND[p.kind]||esc(p.kind)}</span><div class="tp">${esc(p.title)}<small>${esc(p.detail)}</small></div></li>`).join('')}</ul>
+    ${g.transcript!=null&&!ev.demo?`<div class="eyebrow" style="margin-top:12px">${g.version>=2?'聞き取られた発話（スクリプトを見ずに書き起こし）':'聞き取られた発話'}</div><div class="transcript" style="margin-top:4px">${g.transcript?esc(g.transcript):'（発話が聞き取れませんでした）'}</div>`:''}`;
+  // word-level marks on the script + the list under it
+  const marks=wordMarks(g), root=$('fbScript');
+  if(root){ renderScript(root, marks);
+    const lg=$('scriptLegend'); if(lg) lg.textContent=marks.size?'赤＝抜け・別の語に聞こえた、黄＝不明瞭・発音に注意':'指摘された語はありません';
+    const list=[...marks.values()].sort((a,b)=>a.s-b.s||a.i-b.i), wl=$('fbWords');
+    if(wl) wl.innerHTML=list.slice(0,30).map(w=>`<li><span class="ww ${w.st==='missing'?'miss':w.st}">${esc(String(w.w||'').replace(/^[“"(]+|[.,!?;:”")]+$/g,''))}</span><small>${esc(wordNote(w))}</small></li>`).join('')+(list.length>30?`<li><span></span><small>ほか ${list.length-30} 語</small></li>`:'');
   }
 }
 
@@ -1176,6 +1227,7 @@ function rankOf(sc){ return sc>=90?['S','ネイティブ級！']:sc>=80?['A','�
 /* ---------- Evaluation ---------- */
 const FUNC=new Set('a an the to of and in on at for it is are was were be been can will would could have has had that this these those or but if as by with from we you i he she they our your their us me him her my its'.split(' '));
 const VOW=/^[aeiou]/, CONS=/[bcdfghjklmnpqrstvwxyz]$/;
+function wordCount(t){ return (String(t).match(/\S*[A-Za-z0-9]\S*/g)||[]).length; }   // written words, as the evaluator counts them
 function tokenize(t){ return t.toLowerCase().replace(/[’']/g,"'").replace(/[^a-z0-9'\s]/g,' ').split(/\s+/).filter(Boolean); }
 function lcsHits(a,b){ const n=a.length,m=b.length; const dp=Array.from({length:n+1},()=>new Uint16Array(m+1));
   for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) dp[i][j]= a[i]===b[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
@@ -1194,9 +1246,9 @@ function evaluateAttempt(dur){
   let sample=null;
   if(demo){ // sample numbers so the screen can be shown where no microphone exists
     let seed=0; for(const c of sc.id) seed+=c.charCodeAt(0);
-    const hits=scriptWords.map((x,i)=>!((i*7+seed)%13===0));
-    const words=scriptWords.map((x,i)=>({w:x.w,s:+x.key.split(':')[0],st:hits[i]?'ok':'missing'}));
-    sample={overall:72,pronunciation:70,intonation:66,fluency:80,words,good:'文末まで声が途切れず、全体のテンポはお手本に近いです。',
+    const words=[]; sc.s.forEach((p,s)=>(p[0].match(/\S+/g)||[]).forEach((w,i)=>{ const k=words.length; words.push({s,i,w,st:(k*7+seed)%13===0?'missing':'ok'}); }));
+    const nMiss=words.filter(w=>w.st==='missing').length;
+    sample={version:2,overall:72,coverage:Math.round(100*(words.length-nMiss)/words.length),counts:{total:words.length,ok:words.length-nMiss,unclear:0,wrong:0,missing:nMiss},pronunciation:70,intonation:66,fluency:80,words,good:'文末まで声が途切れず、全体のテンポはお手本に近いです。',
       points:[{kind:'intonation',title:'文頭の語を高く始める',detail:'"Attention" のように文頭は高めに入り、文末に向けて下げると英語らしい抑揚になります。'},{kind:'linking',title:'語末の子音を次の母音へつなぐ',detail:'"begin in" は「ビギニン」のように1語で発音します。'},{kind:'pronunciation',title:'語末の子音を落とさない',detail:'"pass" "ready" の最後の音まで言い切ります。'}],
       transcript:'(sample)'};
   }
@@ -1217,12 +1269,12 @@ function showFeedback(ev){
    ${ev.demo?`<div class="section" style="border-color:var(--warn)"><h2>これはサンプル評価です</h2><div class="note" style="margin:0">${micReason()} 下の数値と指摘は画面の見本で、あなたの発話は判定していません。履歴にも保存されません。</div></div>`:''}
    <div class="scorecard">
      ${ringSvg(ev.demo?ev.sample.overall:null, ev.demo?'サンプル':'Gemini評価', 'var(--muted)')}
-     <div class="bars" id="scoreBars"><div class="note" style="margin:0">${ev.demo?'':'Gemini が録音を聞いて評価しています… 通常5〜10秒'}</div>
+     <div class="bars" id="scoreBars"><div class="note" style="margin:0">${ev.demo?'':'Gemini が録音を聞き取り、スクリプトと照合しています… 通常5〜10秒'}</div>
        <div class="note" style="margin-top:2px">${ev.speed.toFixed(1)}× ・ 録音 ${ev.dur.toFixed(1)}秒 ／ お手本 ${ev.modelDur.toFixed(1)}秒（${ev.ratio>1?'+':''}${Math.round((ev.ratio-1)*100)}%）</div>
      </div>
    </div>
    <div class="section" id="aiSection"><h2>強化ポイント</h2><div class="note" style="margin:0">${ev.demo?'':'評価を待っています…'}</div></div>
-   <div class="section"><h2>スクリプト <span class="note" style="margin:0;font-weight:400" id="scriptLegend">${ev.demo?'赤＝抜け・誤り':'評価が返ると、抜け・誤り（赤）と不明瞭（黄）に色が付きます'}</span></h2><div class="script" id="fbScript"></div></div>
+   <div class="section"><h2>スクリプト <span class="note" style="margin:0;font-weight:400" id="scriptLegend">${ev.demo?'赤＝抜け':'評価が返ると、抜け・別の語（赤）と不明瞭（黄）に色が付きます'}</span></h2><div class="script" id="fbScript" style="margin-bottom:0"></div><ul class="wlist" id="fbWords"></ul></div>
    ${ev.demo?'':`<div class="section"><h2>イントネーション曲線</h2><div id="pitchSection"><div class="note" style="margin:0">解析中…</div></div></div>`}
    <div class="actions">
      <div class="section" id="recPanel"></div>
