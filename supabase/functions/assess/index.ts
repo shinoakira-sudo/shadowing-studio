@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { assessV2 } from "./core.ts";
 
 // Shadowing Studio — pronunciation assessment, evaluator v2 (pipeline and rationale in core.ts).
-// POST { audio: <base64 16 kHz WAV>, mimeType: "audio/wav", sentences: string[], speed?: number, accent?: "US" | "UK" | "AU" }
+// POST { audio: <base64 16 kHz WAV>, mimeType: "audio/wav", sentences: string[], speed?: number, accent?: "US" | "UK" | "AU", ipa?: string[] (per sentence, for the coaching text) }
 // Secrets: GEMINI_API_KEY (required); GEMINI_MODEL_ASR / GEMINI_MODEL_JUDGE (optional, default gemini-3.5-flash-lite).
 
 const CORS = {
@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
 
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "invalid JSON body" }, 400); }
-  const { audio, mimeType = "audio/wav", sentences, speed = 1, accent = "US" } = body ?? {};
+  const { audio, mimeType = "audio/wav", sentences, speed = 1, accent = "US", ipa } = body ?? {};
   if (typeof audio !== "string" || !audio || !Array.isArray(sentences) || !sentences.length) return json({ error: "audio and sentences are required" }, 400);
   if (audio.length > 12_000_000) return json({ error: "audio too large (max ~8MB)" }, 413);
   if (sentences.length > 60 || sentences.some((s: unknown) => typeof s !== "string" || s.length > 600)) return json({ error: "script too long" }, 413);
@@ -30,7 +30,7 @@ Deno.serve(async (req: Request) => {
   const asr = Deno.env.get("GEMINI_MODEL_ASR") || lite, judge = Deno.env.get("GEMINI_MODEL_JUDGE") || lite;
   try {
     // the second model is only a fallback for quota / overload errors on the first
-    const out = await assessV2({ audio, mimeType, sentences, speed, accent },
+    const out = await assessV2({ audio, mimeType, sentences, speed, accent, ipa: Array.isArray(ipa) ? ipa : undefined },
       { key, asrModels: [asr, asr === lite ? flash : lite], judgeModels: [judge, judge === lite ? flash : lite] });
     return json(out);
   } catch (e) {

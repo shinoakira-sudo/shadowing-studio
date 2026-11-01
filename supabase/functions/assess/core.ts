@@ -467,7 +467,7 @@ const JUDGE_SCHEMA = {
         type: "OBJECT",
         properties: {
           title: { type: "STRING", description: "Japanese, max 24 chars." },
-          detail: { type: "STRING", description: "Japanese, 1-2 sentences naming the words and what to do." },
+          detail: { type: "STRING", description: "Japanese, 2-3 sentences: the word(s), how it sounded, and exactly how to say it correctly (tongue / lips / breath / stress / rhythm). Quote the target pronunciation in IPA when given." },
           kind: { type: "STRING", enum: ["pronunciation", "intonation", "rhythm", "linking", "fluency", "completeness"] },
         },
         required: ["title", "detail", "kind"],
@@ -477,11 +477,11 @@ const JUDGE_SCHEMA = {
   },
   required: ["pronunciation", "intonation", "fluency", "points", "good"],
 };
-function judgePrompt(sentences: string[], words: WordResult[], transcript: string, speed: number, accent: string) {
+function judgePrompt(sentences: string[], words: WordResult[], transcript: string, speed: number, accent: string, ipa: string[] = []) {
   const lines = sentences.map((_, s) => `[${s}] ` + words.filter((w) => w.s === s).map((w) => {
     const flag = w.st === "missing" ? "{MISSING}" : w.st === "wrong" ? `{HEARD "${w.heard}"}` : w.st === "unclear" ? (w.heard === "?" ? "{UNINTELLIGIBLE}" : `{NEAR "${w.heard}"}`) : "";
     return `${w.s}-${w.i}:${w.w}${flag}`;
-  }).join(" ")).join("\n");
+  }).join(" ") + (ipa[s] ? `\n     IPA: ${ipa[s]}` : "")).join("\n");
   return `You are an English pronunciation coach for a Japanese adult learner preparing for TOEIC.
 The learner SHADOWED the script below at ${speed.toFixed(1)}x speed, speaking along with a model recording in a ${ACCENT[accent] ?? ACCENT.US} accent. Accept any standard native accent (American, British, Australian); never penalize a different native-like variety.
 
@@ -499,12 +499,12 @@ ${lines}
 
 Tasks:
 1. Rate the spoken part: pronunciation (vowels, consonants, word stress), intonation (sentence stress, pitch movement, rhythm, linking), fluency (pace, pauses, hesitations, restarts; stopping before the end lowers it). Scale, do not inflate: 95 = indistinguishable from the native model; 85 = very clear, slight accent; 70 = clearly intelligible, noticeable Japanese accent; 55 = intelligible with effort, frequent errors; 40 = often unintelligible; 20 or below = almost nothing intelligible.
-2. points: 3-5 coaching points in natural Japanese (丁寧体), most impactful first, each naming specific words. If words were missing or misheard, say which phrase to practise. Mention a pronunciation problem on an unflagged word only if you clearly hear it in this recording; never assume an error just because Japanese speakers often make it.
+2. points: 3-5 coaching points in natural Japanese (丁寧体), most impactful first. Each point must (a) name the word or phrase, (b) say how it actually sounded in this recording, and (c) explain concretely HOW to say it correctly: tongue and lip position, breath, which syllable to stress, how to link or reduce, e.g. 「th は舌先を上の前歯の裏に軽く当てて息を通す（s のように歯を閉じない）」「week の最後の k は口を閉じるだけで母音を足さない」. Quote the correct pronunciation in IPA from the script's IPA line when it is given, e.g. /ˈɹɪvɛɹə/. If words were missing, say which phrase to practise and at what speed. Mention a pronunciation problem on an unflagged word only if you clearly hear it in this recording; never assume an error just because Japanese speakers often make it.
 3. good: one sentence in Japanese (丁寧体) about what was done well. If nothing was intelligible, say so kindly.`;
 }
 
 /* ------------------------------------------------------------ pipeline */
-export interface AssessInput { audio: string; mimeType?: string; sentences: string[]; speed?: number; accent?: string }
+export interface AssessInput { audio: string; mimeType?: string; sentences: string[]; speed?: number; accent?: string; ipa?: string[] }
 export interface AssessOptions { key: string; asrModels: string[]; judgeModels: string[] }
 
 export async function assessV2(inp: AssessInput, opt: AssessOptions) {
@@ -534,7 +534,8 @@ export async function assessV2(inp: AssessInput, opt: AssessOptions) {
   let judge: any = null, judgeMeta: any = null;
   if (recognised > 0) {
     try {
-      const j = await gemini(opt.key, opt.judgeModels, [{ text: judgePrompt(inp.sentences, words, transcript, speed, accent) }, audioPart], JUDGE_SCHEMA, 0.2);
+      const ipa = Array.isArray(inp.ipa) ? inp.ipa.map((x) => String(x ?? "").slice(0, 400)) : [];
+      const j = await gemini(opt.key, opt.judgeModels, [{ text: judgePrompt(inp.sentences, words, transcript, speed, accent, ipa) }, audioPart], JUDGE_SCHEMA, 0.2);
       judge = j.out; judgeMeta = { model: j.model, ms: j.ms, usage: j.usage };
     } catch (e) { throw new Error("judge: " + String((e as Error).message ?? e).slice(0, 300)); }
   }
@@ -543,7 +544,7 @@ export async function assessV2(inp: AssessInput, opt: AssessOptions) {
   const KINDS = ["pronunciation", "intonation", "rhythm", "linking", "fluency", "completeness"];
   let points = (Array.isArray(judge?.points) ? judge.points : []).slice(0, 5)
     .filter((p: any) => p && p.title && p.detail)
-    .map((p: any) => ({ title: String(p.title).slice(0, 40), detail: String(p.detail).slice(0, 240), kind: KINDS.includes(p.kind) ? p.kind : "pronunciation" }));
+    .map((p: any) => ({ title: String(p.title).slice(0, 40), detail: String(p.detail).slice(0, 400), kind: KINDS.includes(p.kind) ? p.kind : "pronunciation" }));
   let good = typeof judge?.good === "string" ? judge.good.slice(0, 200) : "";
   if (!recognised) {
     points = [{ title: "声が録音されていません", detail: "マイクの位置と入力音量を確認し、お手本に合わせて声に出して録音してください。", kind: "completeness" }];

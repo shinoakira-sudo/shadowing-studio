@@ -10,7 +10,7 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
   let body: any; try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
-  const { audio_url, sentences, speed = 1, accent = "US" } = body ?? {};
+  const { audio_url, sentences, speed = 1, accent = "US", ipa } = body ?? {};
   if (typeof audio_url !== "string" || !audio_url.startsWith(ALLOWED) || audio_url.includes("..")) return json({ error: "audio_url not allowed" }, 400);
   if (!Array.isArray(sentences) || !sentences.length) return json({ error: "sentences required" }, 400);
   const ar = await fetch(audio_url);
@@ -21,7 +21,7 @@ Deno.serve(async (req: Request) => {
   const r = await fetch(Deno.env.get("SUPABASE_URL") + "/functions/v1/assess", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + anon, apikey: anon },
-    body: JSON.stringify({ audio, mimeType: "audio/wav", sentences, speed, accent }),
+    body: JSON.stringify({ audio, mimeType: "audio/wav", sentences, speed, accent, ipa }),
   });
   return json({ mode: "prod", status: r.status, ms: Date.now() - t0, result: await r.json().catch(() => null) });
 });

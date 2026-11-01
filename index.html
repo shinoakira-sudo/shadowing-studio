@@ -248,6 +248,22 @@ input[type=range]{width:100%;accent-color:var(--accent);min-width:0}
 .counts span.x{background:var(--miss-soft);color:var(--miss-dark)}
 .counts span.u{background:var(--hl);color:var(--hl-fg)}
 .bar.cov .tr i{background:var(--good)}
+.cmp{display:grid;gap:8px;margin-top:6px}
+.cmp .row2{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start;background:var(--surface2);border-radius:14px;padding:10px 12px}
+.cmp .n{font-family:var(--font-ui);font-size:12px;font-weight:900;color:var(--muted);padding-top:4px;font-variant-numeric:tabular-nums}
+.cmp .cw{font-family:var(--font-script);font-size:17px;line-height:2.1;min-width:0;overflow-wrap:anywhere}
+.cmp .hw{display:inline-block;border-radius:5px;padding:0 3px;margin:0 1px;position:relative;vertical-align:baseline}
+.cmp .hw.ok{color:var(--fg)}
+.cmp .hw.miss{color:var(--miss-dark);background:var(--miss-soft);text-decoration:line-through;text-decoration-thickness:2px;opacity:.85}
+.cmp .hw.wrong{color:var(--miss-dark);background:var(--miss-soft)}
+.cmp .hw.unclear{color:var(--hl-fg);background:var(--hl)}
+.cmp .hw .heard{display:block;font-family:var(--font-jp);font-size:10.5px;line-height:1;font-weight:900;color:var(--miss-dark);margin-top:-2px;white-space:nowrap}
+.cmp .hw.unclear .heard{color:var(--hl-fg)}
+.cmp .extra{font-size:12px;color:var(--muted);font-weight:700;margin-top:4px}
+.cmp .ok-all{font-size:12px;color:var(--good-dark);font-weight:900}
+.wlist .rd{display:block;font-size:12.5px;color:var(--accent-dark);font-weight:700;margin-top:1px}
+.wlist .rd i{font-style:normal;font-family:"Literata","Charis SIL","Gentium Plus","Doulos SIL","Noto Serif","Georgia",serif;color:var(--muted);font-weight:500;margin-left:6px}
+.wlist .pl{font-size:11px;font-weight:900;color:var(--accent-dark);background:var(--accent-soft);border:0;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle}
 .transcript{font-family:var(--font-script);font-size:15px;color:var(--muted);background:var(--surface2);border-radius:14px;padding:10px 12px;overflow-wrap:anywhere}
 .fb .script{margin-bottom:0}
 .actions{display:grid;gap:10px;margin-top:4px}
@@ -985,7 +1001,8 @@ async function startRecording(){
   R.mode='demo';
   try{
     if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
-      R.stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      try{ R.stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:true, channelCount:1}}); }
+      catch(e){ R.stream = await navigator.mediaDevices.getUserMedia({audio:true}); }
       R.mode = 'record';
     }
   }catch(e){ R.mode='demo'; R.micError = e && e.name ? e.name : String(e); }
@@ -1158,14 +1175,15 @@ async function runAiAssessment(ev){
   let pcm16;
   try{ const ab=await R.blob.arrayBuffer(); pcm16=await decodeToMono(ab,16000);
     if(R.preroll>0){ const cut=Math.min(pcm16.pcm.length, Math.floor(R.preroll*pcm16.sr)); pcm16={pcm:pcm16.pcm.subarray(cut), sr:pcm16.sr, dur:Math.max(0,pcm16.dur-R.preroll)}; }
-    const nl=normalizeLevel(pcm16.pcm); pcm16.pcm=nl.pcm; R.quiet=nl.level<0.02; }
+    const nl=normalizeLevel(pcm16.pcm); R.quiet=nl.level<0.02;
+    const pad=Math.round(0.5*pcm16.sr), padded=new Float32Array(pad+nl.pcm.length); padded.set(nl.pcm,pad); pcm16.pcm=padded; }   // speech recognisers tend to drop a word that starts at sample 0
   catch(e){ aiRoot.innerHTML=`<h2>強化ポイント</h2><div class="note" style="margin:0">録音データを読み込めませんでした（${esc(String(e&&e.message||e))}）。</div>`; return; }
   // pitch first (local, fast)
   try{ const mine={track:toSemitones(pitchTrack(pcm16.pcm,pcm16.sr)), dur:pcm16.dur}; const model=await modelPitch(S.cur); drawPitch(pRoot, mine, model, hasAudio(S.cur)?TL[S.cur.id].segs:null); }
   catch(e){ pRoot.innerHTML=`<div class="note" style="margin:0">ピッチ解析に失敗しました。</div>`; }
   // then Gemini (v2: blind transcription → alignment → judge, all server-side)
   try{
-    const body=JSON.stringify({audio:pcmToWavBase64(pcm16.pcm,pcm16.sr), mimeType:'audio/wav', sentences:S.cur.s.map(p=>p[0]), speed:S.speed, accent:accentOf(S.cur)});
+    const body=JSON.stringify({audio:pcmToWavBase64(pcm16.pcm,pcm16.sr), mimeType:'audio/wav', sentences:S.cur.s.map(p=>p[0]), speed:S.speed, accent:accentOf(S.cur), ipa:S.cur.s.map((p,i)=>ipaOf(S.cur,i)||'')});
     const call=()=>fetch(SB_URL+'/functions/v1/assess',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SB_ANON,'apikey':SB_ANON},body});
     let res=await call();
     if(res.status===503||res.status===546){ await new Promise(r=>setTimeout(r,1500)); res=await call(); }   // worker still booting / busy
@@ -1182,6 +1200,21 @@ function wordMarks(g){
   const ctr={}; g.words.forEach(w=>{ const s=w.s|0, i=ctr[s]=(ctr[s]==null?0:ctr[s]+1); if(w.st&&w.st!=='ok') marks.set(s+':'+i, {...w, s, i}); });   // v1 fallback: one item per written word
   return marks;
 }
+function wordReading(s,i){ const r=alignFor(S.cur,s); if(!r||!r.w[i]) return null; const toks=ALIGN.ipaTokens(ipaOf(S.cur,s)), chunks=ALIGN.kanaChunks(kanaOf(S.cur,s));
+  const ipa=toks.slice(r.w[i][0],r.w[i][1]+1).join(' '), kana=chunks.slice(r.k[i][0],r.k[i][1]+1).join(' ').replace(/\*\*/g,'');
+  return (ipa||kana)?{ipa,kana}:null; }
+// sentence-by-sentence comparison: the script with what was heard written under each word that differed
+function heardHtml(g){
+  const marks=wordMarks(g); const sents=S.cur.s;
+  const rows=sents.map((p,si)=>{ const words=p[0].match(/\S+/g)||[]; let bad=0;
+    const html=words.map((w,i)=>{ const m=marks.get(si+':'+i); if(!m) return `<span class="hw ok">${esc(w)}</span>`; bad++;
+      const cls=m.st==='missing'?'miss':m.st; const heard=m.st==='missing'?'抜け':(m.heard&&m.heard!=='?'?'→ '+m.heard:'不明瞭');
+      return `<span class="hw ${cls}"${m.note?` title="${esc(m.note)}"`:''}>${esc(w)}<span class="heard">${esc(heard)}</span></span>`; }).join(' ');
+    return `<div class="row2"><div class="n">${si+1}</div><div><div class="cw">${html}</div>${bad?'':'<div class="ok-all">✓ すべて聞き取れました</div>'}</div></div>`; }).join('');
+  const extra=(g.extra||[]).length?`<div class="extra">スクリプトにない語も聞こえました：${esc(g.extra.join('、'))}</div>`:'';
+  return `<div class="cmp">${rows}${extra}</div>`;
+}
+function firstWordsMissing(g){ const w=(g.words||[]).filter(x=>x.s===0&&x.st!=='skip'); if(w.length<4) return false; const head=w.slice(0,3).filter(x=>x.st==='missing').length; const rest=w.slice(3).filter(x=>x.st==='ok').length/(w.length-3); return head>=2&&rest>=0.6; }
 function wordNote(w){ return w.note || (w.st==='missing'?'聞こえませんでした':w.st==='wrong'&&w.heard?`「${w.heard}」と聞こえました`:'はっきりしませんでした'); }
 function renderAi(ev,g){
   const pct=v=>Math.max(0,Math.min(100,Math.round(v||0)));
@@ -1201,13 +1234,18 @@ function renderAi(ev,g){
     ${g.leakage?`<div class="badge warn" style="margin-bottom:10px">録音にお手本の音声が混ざっています。イヤホンが外れていないか確認してください。</div>`:''}
     ${g.good?`<div class="note" style="margin:0 0 10px;color:var(--good)">◎ ${esc(g.good)}</div>`:''}
     <ul class="points">${(g.points||[]).map(p=>`<li><span class="wd" style="font-family:var(--font-jp);font-size:12px;color:var(--accent);background:var(--accent-soft)">${KIND[p.kind]||esc(p.kind)}</span><div class="tp">${esc(p.title)}<small>${esc(p.detail)}</small></div></li>`).join('')}</ul>
-    ${g.transcript!=null&&!ev.demo?`<div class="eyebrow" style="margin-top:12px">${g.version>=2?'聞き取られた発話（スクリプトを見ずに書き起こし）':'聞き取られた発話'}</div><div class="transcript" style="margin-top:4px">${g.transcript?esc(g.transcript):'（発話が聞き取れませんでした）'}</div>`:''}`;
+    ${g.transcript!=null&&!ev.demo?(g.version>=2?`<div class="eyebrow" style="margin-top:14px">聞き取られた発話とスクリプトの照合 <span style="font-weight:700">黒＝聞き取れた　<span style="color:var(--miss-dark)">赤＝抜け・別の語に聞こえた</span>　<span style="background:var(--hl);color:var(--hl-fg);border-radius:4px;padding:0 4px">黄＝不明瞭</span></span></div>${heardHtml(g)}
+      <details style="margin-top:8px"><summary class="note" style="margin:0;cursor:pointer">書き起こしの原文（スクリプトを見ずに聞き取ったもの）</summary><div class="transcript" style="margin-top:6px">${g.transcript?esc(g.transcript):'（発話が聞き取れませんでした）'}</div></details>`
+      :`<div class="eyebrow" style="margin-top:12px">聞き取られた発話</div><div class="transcript" style="margin-top:4px">${g.transcript?esc(g.transcript):'（発話が聞き取れませんでした）'}</div>`):''}
+    ${!ev.demo&&g.version>=2&&firstWordsMissing(g)?`<div class="badge warn" style="margin-top:10px">冒頭の語が録音に入っていません。お手本が始まってから声を出し始めても構いません。マイクが口元にあるか、録音開始直後に声が小さくなっていないかを確認してください。</div>`:''}`;
   // word-level marks on the script + the list under it
   const marks=wordMarks(g), root=$('fbScript');
   if(root){ renderScript(root, marks);
     const lg=$('scriptLegend'); if(lg) lg.textContent=marks.size?'赤＝抜け・別の語に聞こえた、黄＝不明瞭・発音に注意':'指摘された語はありません';
     const list=[...marks.values()].sort((a,b)=>a.s-b.s||a.i-b.i), wl=$('fbWords');
-    if(wl) wl.innerHTML=list.slice(0,30).map(w=>`<li><span class="ww ${w.st==='missing'?'miss':w.st}">${esc(String(w.w||'').replace(/^[“"(]+|[.,!?;:”")]+$/g,''))}</span><small>${esc(wordNote(w))}</small></li>`).join('')+(list.length>30?`<li><span></span><small>ほか ${list.length-30} 語</small></li>`:'');
+    if(wl){ wl.innerHTML=list.slice(0,30).map(w=>{ const rd=wordReading(w.s,w.i);
+        return `<li><span class="ww ${w.st==='missing'?'miss':w.st}">${esc(String(w.w||'').replace(/^[“"(]+|[.,!?;:”")]+$/g,''))}</span><small>${esc(wordNote(w))}${rd?`<span class="rd">正しい読み：${esc(rd.kana)}<i>${esc(rd.ipa)}</i>${hasAudio(S.cur)?`<button class="pl" data-s="${w.s}">▶ この文</button>`:''}</span>`:''}</small></li>`; }).join('')+(list.length>30?`<li><span></span><small>ほか ${list.length-30} 語</small></li>`:'');
+      wl.querySelectorAll('.pl').forEach(b=>b.onclick=()=>{ const k=+b.dataset.s; show('view-practice'); S.idx=k; S.loopsDone=0; S.loop=1; $('btnLoop').innerHTML='リピート<br>1'; playFrom(k,true); setTimeout(()=>show('view-feedback'),50); }); }
   }
 }
 
