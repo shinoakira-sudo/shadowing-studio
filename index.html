@@ -604,7 +604,7 @@ function openPractice(id){
   $('pTitle').textContent=S.cur.title;
   const words = S.cur.s.reduce((n,p)=>n+wordCount(p[0]),0);
   $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${voiceLabel(S.cur)}</span><span class="pill">${words}語・${S.cur.s.length}文</span>`;
-  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); syncJaBtn(); if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ const id=S.cur.id; toast('読み方を作成しています（10〜60秒）…'); ensureKana(S.cur).then(ok=>{ if(S.cur&&S.cur.id===id) toast(ok?'読み方を付けました':'読み方を作成できませんでした。「読み方」を押し直すと再試行します'); if(ok && S.cur) renderScript($('script'),null); }); }
+  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); syncJaBtn(); if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ const id=S.cur.id; toast('読み方を作成しています（10〜60秒）…'); ensureKana(S.cur).then(ok=>{ if(S.cur&&S.cur.id===id) toast(ok?'読み方を付けました':'読み方を作成できませんでした：'+(KANA_ERR[id]||'不明')); if(ok && S.cur) renderScript($('script'),null); }); }
   renderScript($('script'), null);
   setStatus('▶ でお手本を再生。文をタップするとその文だけ再生します。');
   show('view-practice');
@@ -617,7 +617,7 @@ function renderScript(root, marks){
     const b=document.createElement('button'); b.className='sent'+(i===S.idx&&root.id==='script'?' active':''); b.dataset.i=i;
     let wi=0;
     const en = p[0].replace(/\S+/g,(w,off)=>{ const m=marks&&marks.get(i+':'+(wi++)); const cls=m?' '+(m.st==='missing'?'miss':m.st):''; return `<span class="w${cls}" data-o="${off}"${m&&m.note?` title="${esc(m.note)}"`:''}>${esc(w)}</span>`; });
-    const kn=kanaOf(S.cur,i), ip=ipaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${S.kana&&kn?`<div class="kana">${kanaHtml(kn)}</div>${ip?`<div class="ipa">${ipaHtml(ip)}</div>`:''}`:(p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:'')}</div>`;
+    const kn=kanaOf(S.cur,i), ip=ipaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${S.kana&&kn?`<div class="kana">${kanaHtml(kn)}</div>${ip?`<div class="ipa">${ipaHtml(ip)}</div>`:''}`:(S.kana&&i===0?`<div class="ja" style="color:var(--muted)">${esc(kanaStatus(S.cur))}</div>`:(p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:''))}</div>`;
     if(root.id==='script') b.onclick=()=>{S.idx=i; S.loopsDone=0; playFrom(i,true)};
     root.appendChild(b);
   });
@@ -846,23 +846,28 @@ function markWord(k,wi){
   sent.querySelectorAll('.kana .kw').forEach(s=>{ const c=+s.dataset.c; s.classList.toggle('now',!!kr&&c>=kr[0]&&c<=kr[1]); });
   sent.querySelectorAll('.ipa .kw').forEach(s=>{ const c=+s.dataset.c; s.classList.toggle('now',!!wr&&c>=wr[0]&&c<=wr[1]); }); }
 function loadKana(){ rebuildKana(); }
-const KANA_BUSY=new Set();
+const KANA_BUSY=new Set(), KANA_ERR={};
+function kanaStatus(sc){ if(KANA_BUSY.has(sc.id)) return '読み方を作成しています（10〜60秒）…';
+  if(inClaude) return '読み方の作成には外部通信が必要です。Chrome や Safari で GitHub Pages の URL を開いてください（この Claude 内の表示では通信できません）';
+  return KANA_ERR[sc.id] ? '読み方を作成できませんでした：'+KANA_ERR[sc.id]+' ／「読み方」を押し直すと再試行します' : '読み方はまだありません。「読み方」を押すと作成します'; }
 // Generate readings (katakana + IPA) for a user script with the `kana` Edge Function. Gemini can take 10–60 s and
 // sometimes answers 429/503, so this tries up to three times and only one request per script runs at a time.
 async function ensureKana(sc){ if(kanaOf(sc,0) && ipaOf(sc,0)) return true;
   if(KANA_BUSY.has(sc.id)) return false; KANA_BUSY.add(sc.id);
   try{
+    if(S.cur&&S.cur.id===sc.id&&S.kana) renderScript($('script'),null);
     for(let attempt=0; attempt<3; attempt++){
-      try{ const r=await fetch(SB_URL+'/functions/v1/kana',{method:'POST',headers:SB_H,body:JSON.stringify({sentences:sc.s.map(p=>p[0]),accent:(CLOUD.map[sc.id]&&CLOUD.map[sc.id].accent)||'US'})}); const g=await r.json();
+      try{ const r=await fetch(SB_URL+'/functions/v1/kana',{method:'POST',headers:SB_H,body:JSON.stringify({sentences:sc.s.map(p=>p[0]),accent:(CLOUD.map[sc.id]&&CLOUD.map[sc.id].accent)||'US'})}); const g=await r.json().catch(()=>({}));
         if(r.ok&&Array.isArray(g.kana)&&Array.isArray(g.ipa)&&g.kana.length===sc.s.length){
           const entry={accent:'US',kana:g.kana,ipa:g.ipa};
           if(String(sc.id).startsWith('u')){ const m=userKana(); m[sc.id]=entry; LS.set('ss.kanamap',m); }
-          KANA.map[sc.id]=entry; return true; }
-      }catch(e){}
+          KANA.map[sc.id]=entry; delete KANA_ERR[sc.id]; return true; }
+        KANA_ERR[sc.id]=(g.error?String(g.error).slice(0,120):'HTTP '+r.status)+(Array.isArray(g.kana)&&g.kana.length!==sc.s.length?'（文の数が一致しません）':'');
+      }catch(e){ KANA_ERR[sc.id]='通信エラー '+String(e&&e.message||e).slice(0,80); }
       await new Promise(r=>setTimeout(r, 4000*(attempt+1)));
     }
     return false;
-  } finally { KANA_BUSY.delete(sc.id); } }
+  } finally { KANA_BUSY.delete(sc.id); if(S.cur&&S.cur.id===sc.id&&S.kana) renderScript($('script'),null); } }
 $('tgBlind').onclick=e=>{S.blind=!S.blind;e.currentTarget.setAttribute('aria-pressed',S.blind);$('script').classList.toggle('blind',S.blind)};
 $('tgSent').onclick=e=>{S.sentMode=!S.sentMode;e.currentTarget.setAttribute('aria-pressed',S.sentMode)};
 $('tgEngine').onclick=e=>{ S.engine = S.engine==='file'?'tts':'file'; LS.set('ss.engine',S.engine); syncEngineBtn(); if(S.playing){ const i=S.idx; stopPlay(); playFrom(i,false); } };
