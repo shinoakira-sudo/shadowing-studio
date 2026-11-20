@@ -33,14 +33,14 @@ ${sentences.map((s, i) => `${i + 1}. ${s}`).join("\n")}`;
 
 async function kanaFor(sentences: string[], accent: string, key: string, model: string): Promise<{ kana?: string[]; ipa?: string[]; error?: string; tokens?: number }> {
   let r: Response | null = null, text = "";
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt(sentences, accent) }] }], generationConfig: { temperature: 0.2, response_mime_type: "application/json", response_schema: { type: "ARRAY", items: { type: "OBJECT", properties: { kana: { type: "STRING" }, ipa: { type: "STRING" } }, required: ["kana", "ipa"] } } } }),
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt(sentences, accent) }] }], generationConfig: { temperature: 0.2, thinkingConfig: { thinkingLevel: "low" }, response_mime_type: "application/json", response_schema: { type: "ARRAY", items: { type: "OBJECT", properties: { kana: { type: "STRING" }, ipa: { type: "STRING" } }, required: ["kana", "ipa"] } } } }),
     });
     text = await r.text();
     if (r.ok || (r.status !== 429 && r.status !== 503)) break;
-    await new Promise(res => setTimeout(res, 3000 * (attempt + 1)));   // back off on quota / high demand
+    await new Promise(res => setTimeout(res, 2500));   // back off once on quota / high demand, then let the caller fall back to flash-lite
   }
   if (!r || !r.ok) return { error: `Gemini ${r ? r.status : 0}: ${text.slice(0, 300)}` };
   try {
