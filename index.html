@@ -369,8 +369,7 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
         <select id="aLevel"><option>TOEIC 600</option><option selected>TOEIC 730</option><option>TOEIC 860</option></select></label>
       <label class="f">英文（ピリオドで自動的に1文ずつ区切ります）
         <textarea id="aText" placeholder="Thank you for calling Harbor View Hotel. Our front desk is open twenty-four hours a day. ..." required></textarea></label>
-      <label class="f">日本語訳（任意・空欄なら自動翻訳。1文につき1行）<textarea id="aJa" style="min-height:90px;font-family:var(--font-jp);font-size:14px" placeholder="自動翻訳できない環境では、ここに1文ずつ改行して入力"></textarea></label>
-      <div class="hintbox">登録すると、英文は自動音声で発話できるようになります。日本語訳は自動で付きます（Chrome の内蔵翻訳、または Claude 内では Claude が翻訳）。速度は再生画面で 0.5〜2.0倍（0.1刻み）に変更できます。</div>
+      <div class="hintbox">英文だけ登録してください。日本語訳は文ごとに自動で付きます（Gemini が翻訳。読み方も自動生成）。訳を直したいときは再生画面の「日本語訳を作り直す」で再翻訳できます。速度は再生画面で 0.5〜2.0倍（0.1刻み）に変更できます。</div>
       <button class="btn" type="submit">登録して再生画面へ</button>
     </form>
   </section>
@@ -856,8 +855,8 @@ $('tgBlind').onclick=e=>{S.blind=!S.blind;e.currentTarget.setAttribute('aria-pre
 $('tgSent').onclick=e=>{S.sentMode=!S.sentMode;e.currentTarget.setAttribute('aria-pressed',S.sentMode)};
 $('tgEngine').onclick=e=>{ S.engine = S.engine==='file'?'tts':'file'; LS.set('ss.engine',S.engine); syncEngineBtn(); if(S.playing){ const i=S.idx; stopPlay(); playFrom(i,false); } };
 function syncEngineBtn(){ const b=$('tgEngine'); b.hidden = !hasAudio(S.cur) || !synth; b.setAttribute('aria-pressed', S.engine==='tts'); b.textContent = S.engine==='tts' ? '端末の音声で再生中' : '端末の音声で再生'; }
-$('tgTranslate').onclick=async e=>{ const b=e.currentTarget; b.disabled=true; b.textContent='翻訳中…'; const ok=await translateScript(S.cur); b.disabled=false; syncTranslateBtn(); renderScript($('script'),null); toast(ok?'日本語訳を付けました':'この環境では自動翻訳が使えません。登録画面で日本語訳を手入力できます。'); };
-function syncTranslateBtn(){ const b=$('tgTranslate'); b.hidden = !S.cur || !S.cur.s.some(p=>!p[1]); b.textContent='日本語訳を付ける'; }
+$('tgTranslate').onclick=async e=>{ const b=e.currentTarget; b.disabled=true; b.textContent='翻訳中…'; const ok=await translateScript(S.cur, true); b.disabled=false; syncTranslateBtn(); renderScript($('script'),null); toast(ok?'日本語訳を付け直しました':'翻訳サーバに接続できませんでした。しばらくして再度お試しください。'); };
+function syncTranslateBtn(){ const b=$('tgTranslate'); const mine=S.cur && String(S.cur.id).startsWith('u'); b.hidden=!mine; b.textContent=S.cur&&S.cur.s.some(p=>!p[1])?'日本語訳を付ける':'日本語訳を作り直す'; }
 
 /* ---------- Speed ---------- */
 function setSpeed(v){ S.speed=Math.round(Math.min(2,Math.max(0.5,v))*10)/10; $('spd').value=S.speed; $('spdText').textContent=S.speed.toFixed(1)+'×';
@@ -1330,6 +1329,8 @@ function showFeedback(ev){
 
 /* ---------- Translation (Chrome built-in Translator → Claude sample capability → manual) ---------- */
 async function translateSentences(sents){
+  // 0) Edge Function `translate` (Gemini) — the same translator on every device, one line per sentence
+  try{ const r=await fetch(SB_URL+'/functions/v1/translate',{method:'POST',headers:SB_H,body:JSON.stringify({sentences:sents})}); const g=await r.json(); if(r.ok&&Array.isArray(g.ja)&&g.ja.length===sents.length) return g.ja.map(x=>String(x)); }catch(e){}
   // 1) Chrome built-in Translator API (on-device model; first use downloads it)
   try{
     if('Translator' in self){
@@ -1352,20 +1353,31 @@ async function translateSentences(sents){
   }catch(e){}
   return null;
 }
-async function translateScript(sc){
-  const idx = sc.s.map((p,i)=>p[1]?-1:i).filter(i=>i>=0); if(!idx.length) return true;
+async function translateScript(sc, force=false){
+  const idx = sc.s.map((p,i)=>(force||!p[1])?i:-1).filter(i=>i>=0); if(!idx.length) return true;
   const ja = await translateSentences(idx.map(i=>sc.s[i][0])); if(!ja) return false;
   idx.forEach((i,k)=>{ sc.s[i][1]=ja[k]; }); LS.set('ss.user',userScripts); return true;
 }
 
 /* ---------- Add text ---------- */
+// one sentence per [.!?], but never after a title (Mr. Dr.), an initial (J. Smith) or inside a number (4.50);
+// after a.m./p.m./Inc./etc. only when a capital letter follows
+function splitSentences(text){
+  const TITLE=/(?:^|\s)(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|Mt|vs|e\.g|i\.e|[A-Z])\.$/;
+  const SOFT=/(?:^|\s)(?:a\.m|p\.m|U\.S|U\.K|No|Inc|Ltd|Co|Corp|etc|approx|dept)\.$/i;
+  const parts=text.split(/(?<=[.!?]["”']?)\s+/), out=[]; let cur='';
+  parts.forEach((p,k)=>{ cur=cur?cur+' '+p:p; const next=parts[k+1]||'';
+    if(next && (TITLE.test(cur) || /\d\.$/.test(cur) || (SOFT.test(cur) && !/^[A-Z"“]/.test(next)))) return;
+    out.push(cur.trim()); cur=''; });
+  if(cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
+}
 $('addForm').onsubmit=async e=>{ e.preventDefault();
   const text=$('aText').value.replace(/\s+/g,' ').trim();
-  const sents=text.match(/[^.!?]+[.!?]+["”']?|[^.!?]+$/g)?.map(s=>s.trim()).filter(Boolean)||[];
+  const sents=splitSentences(text);
   if(!sents.length) return;
-  const jaLines=$('aJa').value.split(/\n/).map(x=>x.trim()).filter(Boolean);
-  const sc={id:'u'+Date.now(),title:$('aTitle').value.trim()||'無題の教材',type:'自作',cat:'user',voice:'f',level:$('aLevel').value,s:sents.map((s,i)=>[s,jaLines[i]||''])};
-  if(sc.s.some(p=>!p[1])){ const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='日本語訳を作成中…'; const ok=await translateScript(sc); btn.disabled=false; btn.textContent='登録して再生画面へ'; if(!ok) toast('自動翻訳が使えない環境です。再生画面の「日本語訳を付ける」か、手入力で追加できます。'); }
+  const sc={id:'u'+Date.now(),title:$('aTitle').value.trim()||'無題の教材',type:'自作',cat:'user',voice:'f',level:$('aLevel').value,s:sents.map(s=>[s,''])};
+  { const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='日本語訳を作成中…'; const ok=await translateScript(sc); btn.disabled=false; btn.textContent='登録して再生画面へ'; if(!ok) toast('日本語訳を付けられませんでした。再生画面の「日本語訳を作り直す」でやり直せます。'); }
   userScripts.push(sc); LS.set('ss.user',userScripts); ensureKana(sc).then(ok=>{ if(ok && S.cur && S.cur.id===sc.id && S.kana) renderScript($('script'),null); });
   $('addForm').reset(); toast(`「${sc.title}」を登録しました（${sents.length}文）`); F.cat='user';
   openPractice(sc.id); setTimeout(()=>playFrom(0,false),300);
