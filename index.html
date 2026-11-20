@@ -1385,8 +1385,25 @@ $('addForm').onsubmit=async e=>{ e.preventDefault();
 function toast(t){ const d=document.createElement('div'); d.className='toast'; d.textContent=t; document.body.appendChild(d); setTimeout(()=>d.remove(),2600); SND.tick(); }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
+// One-time repair of scripts registered before 2026-11-20: re-split the English with the abbreviation-aware splitter
+// (old splitter broke at "Mr." / "9 a.m." / "$4.50"), drop the stale readings, and translate every sentence again with Gemini.
+async function repairUserScripts(){
+  if(LS.get('ss.userFixed',0)>=2 || !userScripts.length) return;
+  let fixed=0, failed=0;
+  for(const sc of userScripts){
+    const sents=splitSentences(sc.s.map(p=>p[0]).join(' '));
+    const changed = sents.length!==sc.s.length || sents.some((t,i)=>t!==sc.s[i][0]);
+    if(changed){ sc.s=sents.map(t=>[t,'']); const km=LS.get('ss.kanamap',{}); delete km[sc.id]; LS.set('ss.kanamap',km); rebuildKana(); }
+    const ok=await translateScript(sc, true);
+    if(ok) fixed++; else failed++;
+  }
+  LS.set('ss.user',userScripts);
+  if(!failed) LS.set('ss.userFixed',2);          // otherwise try again next time the app opens
+  if(fixed) toast(`自作教材 ${fixed} 本の文の区切りと日本語訳を作り直しました`);
+  if(S.cur && String(S.cur.id).startsWith('u')) { renderScript($('script'),null); syncTranslateBtn(); }
+}
 (async function boot(){
-  loadCloudAudio(); loadKana();
+  loadCloudAudio(); loadKana(); repairUserScripts();
   if(U.cur && curUser()){ renderHome(); show('view-library'); await loadUsers(); await loadAttempts(); renderHome(); }
   else { show('view-users'); renderUsers(); await loadUsers(); renderUsers(); if(U.list.length===1 && !U.cur){ /* single learner: no need to ask */ selectUser(U.list[0].id); } }
 })();
