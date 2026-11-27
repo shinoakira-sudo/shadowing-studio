@@ -387,6 +387,7 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
       <div class="eyebrow">自作教材の引っ越し</div>
       <p class="note" style="margin:6px 0 10px">自作教材はこの画面を開いているサイトごとに保存されます。別の場所（例：Claude 内の表示 → GitHub Pages）へ移すときは、ここで書き出して、移動先で読み込んでください。</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" type="button" id="btnMoveSite" hidden>本番サイトへ引っ越す（ワンタップ）</button>
         <button class="btn ghost" type="button" id="btnExport">書き出す（コピー）</button>
         <label class="btn ghost" style="cursor:pointer">ファイルから読み込む<input type="file" id="fileImport" accept=".json,application/json" hidden></label>
         <button class="btn ghost" type="button" id="btnImportText">貼り付けて読み込む</button>
@@ -1426,6 +1427,16 @@ async function translateScript(sc, force=false){
 }
 
 /* ---------- Move user scripts between sites ---------- */
+const PAGES_URL='https://shinoakira-sudo.github.io/shadowing-studio/';
+// One tap from the Claude viewer: open the production site with the user scripts packed into the URL fragment
+// (the fragment never leaves the browser; the site imports it on load and removes it from the address bar).
+function packBundle(){ const bytes=new TextEncoder().encode(JSON.stringify(exportBundle())); let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b)); return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function unpackBundle(b64){ const bin=atob(b64.replace(/-/g,'+').replace(/_/g,'/')); const bytes=Uint8Array.from(bin,c=>c.charCodeAt(0)); return new TextDecoder().decode(bytes); }
+$('btnMoveSite').hidden=!(inClaude&&userScripts.length);
+$('btnMoveSite').onclick=()=>{ const url=PAGES_URL+'#import='+packBundle(); const w=window.open(url,'_blank'); if(!w){ $('moveText').value=url; $('moveNote').textContent='新しいタブを開けませんでした。下のアドレスをコピーして Chrome で開いてください。'; } else $('moveNote').textContent='本番サイトを開きました。そちらで読み込みが完了します。'; };
+function importFromHash(){ const m=location.hash.match(/^#import=([A-Za-z0-9_-]+)/); if(!m) return; history.replaceState(null,'',location.pathname+location.search);
+  let text=null; try{ text=unpackBundle(m[1]); }catch(e){ toast('引き継ぎデータを読めませんでした'); return; }
+  setTimeout(()=>{ try{ show('view-add'); }catch(e){} importBundle(text).then(()=>toast('自作教材を引き継ぎました')); }, 600); }
 function exportBundle(){ return {app:'shadowing-studio',version:1,exported:new Date().toISOString(),scripts:userScripts,kanamap:LS.get('ss.kanamap',{}),chunkmap:LS.get('ss.chunkmap',{})}; }
 $('btnExport').onclick=async()=>{ if(!userScripts.length){ toast('自作教材がありません'); return; }
   const text=JSON.stringify(exportBundle()); $('moveText').value=text; let copied=false;
@@ -1509,7 +1520,7 @@ async function repairUserScripts(){
   if(S.cur && String(S.cur.id).startsWith('u')) { renderScript($('script'),null); syncTranslateBtn(); }
 }
 (async function boot(){
-  loadCloudAudio(); loadKana(); repairUserScripts();
+  loadCloudAudio(); loadKana(); importFromHash(); repairUserScripts();
   if(U.cur && curUser()){ renderHome(); show('view-library'); await loadUsers(); await loadAttempts(); renderHome(); }
   else { show('view-users'); renderUsers(); await loadUsers(); renderUsers(); if(U.list.length===1 && !U.cur){ /* single learner: no need to ask */ selectUser(U.list[0].id); } }
 })();
