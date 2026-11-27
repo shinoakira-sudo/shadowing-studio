@@ -374,6 +374,11 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
       <button class="back" id="backLib2" aria-label="教材一覧へ戻る">←</button>
       <h1>テキストから教材を登録</h1>
     </div>
+    <div class="card" id="addDemoNote" hidden style="margin-bottom:14px">
+      <div class="eyebrow">この画面では登録できません</div>
+      <p class="note" style="margin:6px 0 10px">ここは Claude 内のデモ表示です。外部との通信ができないため、自作教材の翻訳・読み方・チャンクの作成や、サーバへの保存ができません。自作教材は本番サイトで登録してください。登録した教材はサーバに保存され、どの端末でも使えます。</p>
+      <a class="btn" href="https://shinoakira-sudo.github.io/shadowing-studio/" target="_blank" rel="noopener">本番サイトを開く</a>
+    </div>
     <form class="form" id="addForm">
       <label class="f">タイトル<input type="text" id="aTitle" placeholder="例: ホテルのチェックイン案内" required></label>
       <label class="f">レベル目安
@@ -595,7 +600,7 @@ function renderLib(){
     lib.appendChild(b);
   });
 }
-$('goAdd').onclick=$('goAdd2').onclick=()=>show('view-add');
+$('goAdd').onclick=$('goAdd2').onclick=()=>{ show('view-add'); $('addDemoNote').hidden=!inClaude; $('addForm').hidden=inClaude; };
 $('backLib2').onclick=$('backLib3').onclick=$('backLib4').onclick=()=>{show('view-library');renderHome()};
 $('backLib').onclick=()=>{ if(S.cur&&S.cur.cat){ openCategory(S.cur.cat); } else { show('view-library'); renderHome(); } };
 $('backPractice').onclick=()=>show('view-practice');
