@@ -659,7 +659,8 @@ async function ensureChunks(sc){ if(hasChunks(sc)) return true; if(!isMine(sc)||
 function syncChunkBtn(){ const b=$('tgChunk'); const can=hasChunks(S.cur)||isMine(S.cur); b.hidden=!can; b.disabled=CHUNK_BUSY.has(S.cur&&S.cur.id);
   b.textContent=CHUNK_BUSY.has(S.cur&&S.cur.id)?'チャンクを作成中…':'チャンク'; b.setAttribute('aria-pressed',S.chunk&&hasChunks(S.cur)); }
 $('tgChunk').onclick=async e=>{ S.chunk=!S.chunk; LS.set('ss.chunk',S.chunk);
-  if(S.chunk&&!hasChunks(S.cur)){ const id=S.cur.id; toast('意味の塊に分けています（10〜40秒）…'); const ok=await ensureChunks(S.cur); if(S.cur&&S.cur.id===id){ if(!ok) toast('チャンクを作成できませんでした：'+(CHUNK_ERR[id]||'不明')+'。もう一度押すと再試行します'); } }
+  if(S.chunk&&!hasChunks(S.cur)&&inClaude){ toast('チャンクの作成には外部通信が必要です。Chrome や Safari で GitHub Pages の URL を開いてください'); }
+  else if(S.chunk&&!hasChunks(S.cur)){ const id=S.cur.id; toast('意味の塊に分けています（10〜40秒）…'); const ok=await ensureChunks(S.cur); if(S.cur&&S.cur.id===id){ if(!ok) toast('チャンクを作成できませんでした：'+(CHUNK_ERR[id]||'不明')+'。もう一度押すと再試行します'); } }
   syncChunkBtn(); renderScript($('script'),null); if(S.chunk&&hasChunks(S.cur)) toast('意味の塊ごとに、英語の語順で読み取る練習です'); };
 $('tgKana').onclick=async e=>{ S.kana=!S.kana; LS.set('ss.kana',S.kana); e.currentTarget.setAttribute('aria-pressed',S.kana); syncJaBtn();
   if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ e.currentTarget.textContent='読み方を作成中…'; const ok=await ensureKana(S.cur); e.currentTarget.textContent='読み方'; if(!ok) toast('読み方を作成できませんでした（接続を確認してください）'); }
@@ -1433,7 +1434,7 @@ $('addForm').onsubmit=async e=>{ e.preventDefault();
   const sc={id:'u'+Date.now(),title:$('aTitle').value.trim()||'無題の教材',type:'自作',cat:'user',voice:'f',level:$('aLevel').value,s:sents.map(s=>[s,''])};
   { const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; btn.textContent='日本語訳を作成中…'; const ok=await translateScript(sc); btn.disabled=false; btn.textContent='登録して再生画面へ'; if(!ok) toast('日本語訳を付けられませんでした。再生画面の「日本語訳を作り直す」でやり直せます。'); }
   userScripts.push(sc); LS.set('ss.user',userScripts); ensureKana(sc).then(ok=>{ if(ok && S.cur && S.cur.id===sc.id && S.kana) renderScript($('script'),null); });
-  ensureChunks(sc).then(ok=>{ if(ok && S.cur && S.cur.id===sc.id && S.chunk) renderScript($('script'),null); });
+  syncUserScripts().then(()=>ensureChunks(sc)).then(ok=>{ if(ok && S.cur && S.cur.id===sc.id && S.chunk) renderScript($('script'),null); });
   $('addForm').reset(); toast(`「${sc.title}」を登録しました（${sents.length}文）`); F.cat='user';
   openPractice(sc.id); setTimeout(()=>playFrom(0,false),300);
 };
@@ -1442,8 +1443,26 @@ function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 
 // One-time repair of scripts registered before 2026-11-20: re-split the English with the abbreviation-aware splitter
 // (old splitter broke at "Mr." / "9 a.m." / "$4.50"), drop the stale readings, and translate every sentence again with Gemini.
+// Mirror user scripts to Supabase (shadowing_user_scripts) so chunks and readings can be generated in the background
+// by a scheduled job, then pull whatever the server has finished into the on-device caches.
+async function syncUserScripts(){
+  if(!userScripts.length || inClaude) return;
+  try{
+    const rows=userScripts.map(sc=>({id:sc.id, user_id:U.cur||null, title:sc.title, level:sc.level, sentences:sc.s.map(p=>p[0]), ja:sc.s.map(p=>p[1]||'')}));
+    await fetch(SB_URL+'/rest/v1/shadowing_user_scripts?on_conflict=id',{method:'POST',headers:{...SB_H,'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+    const r=await fetch(SB_URL+'/rest/v1/shadowing_user_scripts?select=id,sentences,chunks,kana,ipa&id=in.('+userScripts.map(sc=>'"'+sc.id+'"').join(',')+')',{headers:SB_H});
+    const got=await r.json(); if(!Array.isArray(got)) return;
+    let n=0; const cm=LS.get('ss.chunkmap',{}), km=LS.get('ss.kanamap',{});
+    for(const row of got){ const sc=userScripts.find(x=>x.id===row.id); if(!sc) continue;
+      const same=Array.isArray(row.sentences)&&row.sentences.length===sc.s.length&&row.sentences.every((t,i)=>t===sc.s[i][0]); if(!same) continue;
+      if(!cm[sc.id]&&Array.isArray(row.chunks)&&row.chunks.length===sc.s.length){ cm[sc.id]=row.chunks; n++; }
+      if(!km[sc.id]&&Array.isArray(row.kana)&&Array.isArray(row.ipa)&&row.kana.length===sc.s.length){ km[sc.id]={accent:'US',kana:row.kana,ipa:row.ipa}; n++; } }
+    if(n){ LS.set('ss.chunkmap',cm); LS.set('ss.kanamap',km); rebuildKana(); if(S.cur&&isMine(S.cur)){ syncChunkBtn(); renderScript($('script'),null); } }
+  }catch(e){}
+}
 async function repairUserScripts(){
   if(!userScripts.length) return;
+  await syncUserScripts();
   if(LS.get('ss.userFixed',0)>=2){ for(const sc of userScripts){ if(!hasChunks(sc)) await ensureChunks(sc); if(!(kanaOf(sc,0)&&ipaOf(sc,0))) await ensureKana(sc); } if(S.cur&&isMine(S.cur)) { syncChunkBtn(); renderScript($('script'),null); } return; }
   let fixed=0, failed=0;
   for(const sc of userScripts){

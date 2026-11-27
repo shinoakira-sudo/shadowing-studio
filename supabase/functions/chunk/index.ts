@@ -34,12 +34,7 @@ function repair(sentence: string, chunks: { en: string; ja: string }[]): [string
   return k === words.length ? out : null;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  const key = Deno.env.get("GEMINI_API_KEY"); if (!key) return json({ error: "GEMINI_API_KEY is not set" }, 500);
-  let body: any; try { body = await req.json(); } catch { return json({ error: "invalid JSON" }, 400); }
-  const sentences: string[] = Array.isArray(body?.sentences) ? body.sentences.map((s: unknown) => String(s ?? "").trim().slice(0, 600)) : [];
-  if (!sentences.length || sentences.length > 60) return json({ error: "sentences: 1-60 strings" }, 400);
+async function chunkSentences(key: string, sentences: string[]) {
   const result: ([string, string][] | null)[] = sentences.map(() => null);
   let last = "";
   for (const model of ["gemini-3.5-flash", "gemini-3.5-flash-lite"]) {
@@ -63,5 +58,44 @@ Deno.serve(async (req) => {
   }
   // a sentence the model could not split cleanly becomes a single chunk, so the feature still works
   const chunks = result.map((c, i) => c ?? [[sentences[i], ""]]);
-  return json({ chunks, failed: result.filter((c) => !c).length, detail: result.every(Boolean) ? undefined : last });
+  return { chunks, failed: result.filter((c) => !c).length, detail: result.every(Boolean) ? undefined : last };
+}
+
+// Background mode: { batch: true, limit?: n } — fill chunks (and readings, via the `kana` function) for mirrored
+// user scripts that still lack them (public.shadowing_user_scripts). Run by pg_cron every few minutes.
+async function runBatch(key: string, limit: number) {
+  const url = Deno.env.get("SUPABASE_URL")!, svc = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const H = { "Content-Type": "application/json", apikey: svc, Authorization: "Bearer " + svc, Prefer: "return=minimal" };
+  const rows: any[] = await (await fetch(`${url}/rest/v1/shadowing_user_scripts?or=(chunks.is.null,kana.is.null)&order=updated_at.asc&limit=${limit}`, { headers: H })).json();
+  const done: Record<string, string> = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const sentences: string[] = Array.isArray(row.sentences) ? row.sentences.map(String) : [];
+    if (!sentences.length) continue;
+    const patch: Record<string, unknown> = {};
+    if (!row.chunks) {
+      try { const c = await chunkSentences(key, sentences); patch.chunks = c.chunks; patch.chunk_error = c.failed ? c.detail ?? "partial" : null; }
+      catch (e) { patch.chunk_error = String((e as Error).message ?? e).slice(0, 200); }
+    }
+    if (!row.kana) {
+      try {
+        const r = await fetch(`${url}/functions/v1/kana`, { method: "POST", headers: { "Content-Type": "application/json", apikey: svc, Authorization: "Bearer " + svc }, body: JSON.stringify({ sentences, accent: "US" }) });
+        const g = await r.json();
+        if (r.ok && Array.isArray(g.kana) && g.kana.length === sentences.length) { patch.kana = g.kana; patch.ipa = g.ipa; patch.kana_error = null; }
+        else patch.kana_error = String(g.error ?? "HTTP " + r.status).slice(0, 200);
+      } catch (e) { patch.kana_error = String((e as Error).message ?? e).slice(0, 200); }
+    }
+    await fetch(`${url}/rest/v1/shadowing_user_scripts?id=eq.${encodeURIComponent(row.id)}`, { method: "PATCH", headers: H, body: JSON.stringify(patch) });
+    done[row.id] = Object.keys(patch).join(",");
+  }
+  return done;
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const key = Deno.env.get("GEMINI_API_KEY"); if (!key) return json({ error: "GEMINI_API_KEY is not set" }, 500);
+  let body: any; try { body = await req.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+  if (body?.batch) return json({ done: await runBatch(key, Math.min(5, Number(body.limit) || 3)) });
+  const sentences: string[] = Array.isArray(body?.sentences) ? body.sentences.map((s: unknown) => String(s ?? "").trim().slice(0, 600)) : [];
+  if (!sentences.length || sentences.length > 60) return json({ error: "sentences: 1-60 strings" }, 400);
+  return json(await chunkSentences(key, sentences));
 });
