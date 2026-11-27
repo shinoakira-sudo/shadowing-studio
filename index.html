@@ -153,6 +153,15 @@ h1,h2,h3{margin:0;font-family:var(--font-ui);text-wrap:balance;font-weight:900}
 .sent.active .n{color:var(--accent-dark)}
 .w{border-radius:4px;padding:0 1px;transition:background .08s}
 .w.now{background:var(--hl);color:var(--hl-fg)}
+/* chunk reading: each sense group is a tile with its head-first Japanese gloss underneath */
+.sent .en.chunked{display:flex;flex-wrap:wrap;gap:6px 6px;align-items:stretch;line-height:1.35}
+.ck{display:inline-flex;flex-direction:column;justify-content:flex-start;padding:3px 7px 4px;border-radius:10px;background:var(--surface2);border-left:3px solid var(--line2)}
+.ck:nth-child(odd){border-left-color:var(--accent)}
+.ck:nth-child(even){border-left-color:var(--sun)}
+.ck .ce{white-space:nowrap}
+.ck .cj{font-family:var(--font-jp);font-size:11.5px;line-height:1.3;color:var(--muted);font-weight:700;margin-top:2px;white-space:nowrap}
+.sent.active .ck{background:var(--surface)}
+.script.blind .ck .cj{opacity:0}
 .kw{border-radius:4px;padding:0 1px;transition:background .08s}
 .kw.now{background:var(--hl);color:var(--hl-fg)}
 .sent .kana .kw.now b{color:var(--hl-fg)}
@@ -348,6 +357,7 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
     <div class="meta" id="pMeta"></div>
     <div class="toggles">
       <button class="tg" id="tgJa" aria-pressed="true">日本語訳</button>
+      <button class="tg" id="tgChunk" aria-pressed="false" title="意味の塊ごとに区切り、英語の語順で理解する練習（チャンクリーディング）">チャンク</button>
       <button class="tg" id="tgKana" aria-pressed="false">読み方</button>
       <button class="tg" id="tgBlind" aria-pressed="false">スクリプトを隠す</button>
       <button class="tg" id="tgSent" aria-pressed="false">1文ずつ止める</button>
@@ -484,7 +494,7 @@ function recommend(){
 
 /* ---------- State ---------- */
 /* ---------- State ---------- */
-const S = {cur:null, engine: LS.get('ss.engine','file'), kana: LS.get('ss.kana', false), speed:1.0, loop:0 /*0=∞*/, sentMode:false, blind:false, ja:true, idx:0, playing:false, loopsDone:0, modelDur:{}, playStart:0, lastEval:null};
+const S = {cur:null, engine: LS.get('ss.engine','file'), kana: LS.get('ss.kana', false), chunk: LS.get('ss.chunk', false), speed:1.0, loop:0 /*0=∞*/, sentMode:false, blind:false, ja:true, idx:0, playing:false, loopsDone:0, modelDur:{}, playStart:0, lastEval:null};
 
 /* ---------- Views ---------- */
 const $ = id => document.getElementById(id);
@@ -604,7 +614,7 @@ function openPractice(id){
   $('pTitle').textContent=S.cur.title;
   const words = S.cur.s.reduce((n,p)=>n+wordCount(p[0]),0);
   $('pMeta').innerHTML=`<span class="pill lv">${esc(S.cur.level)}</span><span class="pill">${esc(S.cur.type||CAT_NAME[S.cur.cat]||'')}</span><span class="pill">${voiceLabel(S.cur)}</span><span class="pill">${words}語・${S.cur.s.length}文</span>`;
-  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); syncJaBtn(); if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ const id=S.cur.id; toast('読み方を作成しています（10〜60秒）…'); ensureKana(S.cur).then(ok=>{ if(S.cur&&S.cur.id===id) toast(ok?'読み方を付けました':'読み方を作成できませんでした：'+(KANA_ERR[id]||'不明')); if(ok && S.cur) renderScript($('script'),null); }); }
+  primeAudio(S.cur); syncEngineBtn(); syncTranslateBtn(); syncChunkBtn(); $('tgKana').setAttribute('aria-pressed',S.kana); syncJaBtn(); if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ const id=S.cur.id; toast('読み方を作成しています（10〜60秒）…'); ensureKana(S.cur).then(ok=>{ if(S.cur&&S.cur.id===id) toast(ok?'読み方を付けました':'読み方を作成できませんでした：'+(KANA_ERR[id]||'不明')); if(ok && S.cur) renderScript($('script'),null); }); }
   renderScript($('script'), null);
   setStatus('▶ でお手本を再生。文をタップするとその文だけ再生します。');
   show('view-practice');
@@ -616,14 +626,24 @@ function renderScript(root, marks){
   S.cur.s.forEach((p,i)=>{
     const b=document.createElement('button'); b.className='sent'+(i===S.idx&&root.id==='script'?' active':''); b.dataset.i=i;
     let wi=0;
-    const en = p[0].replace(/\S+/g,(w,off)=>{ const m=marks&&marks.get(i+':'+(wi++)); const cls=m?' '+(m.st==='missing'?'miss':m.st):''; return `<span class="w${cls}" data-o="${off}"${m&&m.note?` title="${esc(m.note)}"`:''}>${esc(w)}</span>`; });
-    const kn=kanaOf(S.cur,i), ip=ipaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="en">${en}</div>${S.kana&&kn?`<div class="kana">${kanaHtml(kn)}</div>${ip?`<div class="ipa">${ipaHtml(ip)}</div>`:''}`:(S.kana&&i===0?`<div class="ja" style="color:var(--muted)">${esc(kanaStatus(S.cur))}</div>`:(p[1]&&S.ja?`<div class="ja">${esc(p[1])}</div>`:''))}</div>`;
+    const wordSpan=(w,off)=>{ const m=marks&&marks.get(i+':'+(wi++)); const cls=m?' '+(m.st==='missing'?'miss':m.st):''; return `<span class="w${cls}" data-o="${off}"${m&&m.note?` title="${esc(m.note)}"`:''}>${esc(w)}</span>`; };
+    const ch=S.chunk&&root.id==='script'?chunksOf(S.cur,i):null; let en, enCls='en';
+    if(ch){ enCls='en chunked'; const words=[]; p[0].replace(/\S+/g,(w,off)=>{ words.push([w,off]); return w; }); let k=0;
+      en=ch.map(([text,ja])=>{ const n=text.split(/\s+/).length; const ws=words.slice(k,k+n); k+=n; return `<span class="ck"><span class="ce">${ws.map(([w,off])=>wordSpan(w,off)).join(' ')}</span><span class="cj">${esc(ja)}</span></span>`; }).join(''); }
+    else en = p[0].replace(/\S+/g,wordSpan);
+    const kn=kanaOf(S.cur,i), ip=ipaOf(S.cur,i); b.innerHTML=`<div class="n">${i+1}</div><div><div class="${enCls}">${en}</div>${S.kana&&kn?`<div class="kana">${kanaHtml(kn)}</div>${ip?`<div class="ipa">${ipaHtml(ip)}</div>`:''}`:(S.kana&&i===0?`<div class="ja" style="color:var(--muted)">${esc(kanaStatus(S.cur))}</div>`:(p[1]&&S.ja&&!ch?`<div class="ja">${esc(p[1])}</div>`:''))}</div>`;
     if(root.id==='script') b.onclick=()=>{S.idx=i; S.loopsDone=0; playFrom(i,true)};
     root.appendChild(b);
   });
 }
 $('tgJa').onclick=e=>{S.ja=!S.ja;e.currentTarget.setAttribute('aria-pressed',S.ja);renderScript($('script'),null)};
 function syncJaBtn(){ $('tgJa').disabled=S.kana; $('tgJa').style.opacity=S.kana?'.45':''; }
+// chunk reading data: bundled CONTENT_CHUNK[id] = per sentence [[chunkText, ja], ...]; the chunk texts joined by one space equal the sentence
+function chunksOf(sc,i){ const c=window.CONTENT_CHUNK&&window.CONTENT_CHUNK[sc.id]; const ch=c&&c[i]; if(!Array.isArray(ch)||!ch.length) return null;
+  return ch.map(x=>x[0]).join(' ')===sc.s[i][0] ? ch : null; }
+function hasChunks(sc){ return !!(sc && window.CONTENT_CHUNK && window.CONTENT_CHUNK[sc.id]); }
+function syncChunkBtn(){ const b=$('tgChunk'); b.hidden=!hasChunks(S.cur); b.setAttribute('aria-pressed',S.chunk&&hasChunks(S.cur)); }
+$('tgChunk').onclick=e=>{ S.chunk=!S.chunk; LS.set('ss.chunk',S.chunk); syncChunkBtn(); renderScript($('script'),null); if(S.chunk) toast('意味の塊ごとに、英語の語順で読み取る練習です'); };
 $('tgKana').onclick=async e=>{ S.kana=!S.kana; LS.set('ss.kana',S.kana); e.currentTarget.setAttribute('aria-pressed',S.kana); syncJaBtn();
   if(S.kana && !(kanaOf(S.cur,0)&&ipaOf(S.cur,0))){ e.currentTarget.textContent='読み方を作成中…'; const ok=await ensureKana(S.cur); e.currentTarget.textContent='読み方'; if(!ok) toast('読み方を作成できませんでした（接続を確認してください）'); }
   renderScript($('script'),null); };
