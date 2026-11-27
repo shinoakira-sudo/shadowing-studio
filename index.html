@@ -383,6 +383,15 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
       <div class="hintbox">英文だけ登録してください。日本語訳は文ごとに自動で付きます（Gemini が翻訳。読み方も自動生成）。訳を直したいときは再生画面の「日本語訳を作り直す」で再翻訳できます。速度は再生画面で 0.5〜2.0倍（0.1刻み）に変更できます。</div>
       <button class="btn" type="submit">登録して再生画面へ</button>
     </form>
+    <div class="card" style="margin-top:14px">
+      <div class="eyebrow">自作教材の引っ越し</div>
+      <p class="note" style="margin:6px 0 10px">自作教材はこの画面を開いているサイトごとに保存されます。別の場所（例：Claude 内の表示 → GitHub Pages）へ移すときは、ここで書き出して、移動先で読み込んでください。</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost" type="button" id="btnExport">書き出す（ファイル保存）</button>
+        <label class="btn ghost" style="cursor:pointer">読み込む<input type="file" id="fileImport" accept=".json,application/json" hidden></label>
+      </div>
+      <div class="note" id="moveNote" style="margin:8px 0 0"></div>
+    </div>
   </section>
 
   <!-- FEEDBACK -->
@@ -1414,6 +1423,21 @@ async function translateScript(sc, force=false){
   idx.forEach((i,k)=>{ sc.s[i][1]=ja[k]; }); LS.set('ss.user',userScripts); return true;
 }
 
+/* ---------- Move user scripts between sites ---------- */
+$('btnExport').onclick=()=>{ if(!userScripts.length){ toast('自作教材がありません'); return; }
+  const data={app:'shadowing-studio',version:1,exported:new Date().toISOString(),scripts:userScripts,kanamap:LS.get('ss.kanamap',{}),chunkmap:LS.get('ss.chunkmap',{})};
+  const blob=new Blob([JSON.stringify(data)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='shadowing-user-scripts.json'; document.body.appendChild(a); a.click(); a.remove();
+  $('moveNote').textContent=`${userScripts.length} 本を書き出しました。移動先のアプリで「読み込む」からこのファイルを選んでください。`; };
+$('fileImport').onchange=async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+  try{ const d=JSON.parse(await f.text()); if(d.app!=='shadowing-studio'||!Array.isArray(d.scripts)) throw new Error('形式が違います');
+    let added=0; const km=LS.get('ss.kanamap',{}), cm=LS.get('ss.chunkmap',{});
+    for(const sc of d.scripts){ if(!sc||!sc.id||!Array.isArray(sc.s)) continue; if(userScripts.some(x=>x.id===sc.id)) continue; sc.cat='user'; sc.type='自作'; userScripts.push(sc); added++;
+      if(d.kanamap&&d.kanamap[sc.id]) km[sc.id]=d.kanamap[sc.id]; if(d.chunkmap&&d.chunkmap[sc.id]) cm[sc.id]=d.chunkmap[sc.id]; }
+    LS.set('ss.user',userScripts); LS.set('ss.kanamap',km); LS.set('ss.chunkmap',cm); rebuildKana(); LS.set('ss.userFixed',2);
+    $('moveNote').textContent=added?`${added} 本を読み込みました。訳・読み方・チャンクが無いものは順に作成します。`:'新しい教材はありませんでした（同じものは読み込み済み）。';
+    if(added){ renderHome(); syncUserScripts().then(()=>repairUserScripts()); }
+  }catch(err){ $('moveNote').textContent='読み込めませんでした：'+(err&&err.message||err); }
+  e.target.value=''; };
 /* ---------- Add text ---------- */
 // one sentence per [.!?], but never after a title (Mr. Dr.), an initial (J. Smith) or inside a number (4.50);
 // after a.m./p.m./Inc./etc. only when a capital letter follows
