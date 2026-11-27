@@ -454,14 +454,14 @@ textarea{min-height:150px;font-family:var(--font-script);font-size:16px;line-hei
   </div>
 </div>
 
-<script src="content.js?v=d22725b5"></script>
+<script src="content.js?v=d47b3c5b"></script>
 <script>
 /* ---------- Data ---------- */
 // Built-in scripts and their audio timelines come from content.js (window.CONTENT / window.CONTENT_TL)
 const BUILTIN = Array.isArray(window.CONTENT) ? window.CONTENT : [];
-const CATS = [['air','空港・機内'],['store','店内・施設'],['vm','留守電・伝言'],['mtg','社内連絡・会議'],['ad','広告・CM'],['news','ニュース・天気・交通'],['tour','ツアー・施設案内'],['event','イベント・講演'],['phone','電話・自動音声'],['talk','説明・トレーニング'],['user','自作']];
+const CATS = [['air','空港・機内'],['store','店内・施設'],['vm','留守電・伝言'],['mtg','社内連絡・会議'],['ad','広告・CM'],['news','ニュース・天気・交通'],['tour','ツアー・施設案内'],['event','イベント・講演'],['phone','電話・自動音声'],['talk','説明・トレーニング'],['mine','マイ教材'],['user','自作']];
 const CAT_NAME = Object.fromEntries(CATS);
-const CAT_META = {air:['✈️','搭乗案内・遅延・機内サービス・手荷物'],store:['🏬','店内放送・閉店時刻・セール・施設案内'],vm:['📞','取引先や同僚からの留守電・折り返し依頼'],mtg:['🏢','会議の冒頭・社内方針・スケジュール連絡'],ad:['📻','ラジオCM・開店・会員特典・期間限定'],news:['📰','地域ニュース・天気予報・交通情報'],tour:['🗺️','博物館・工場・市内観光のガイド'],event:['🎤','会議の開会・登壇者紹介・表彰'],phone:['☎️','自動音声メニュー・予約確認・障害案内'],talk:['🧑‍🏫','製品説明・社内研修・手順の説明'],user:['✍️','自分で登録した英文']};
+const CAT_META = {air:['✈️','搭乗案内・遅延・機内サービス・手荷物'],store:['🏬','店内放送・閉店時刻・セール・施設案内'],vm:['📞','取引先や同僚からの留守電・折り返し依頼'],mtg:['🏢','会議の冒頭・社内方針・スケジュール連絡'],ad:['📻','ラジオCM・開店・会員特典・期間限定'],news:['📰','地域ニュース・天気予報・交通情報'],tour:['🗺️','博物館・工場・市内観光のガイド'],event:['🎤','会議の開会・登壇者紹介・表彰'],mine:['📝','自分で書いたスピーチ・意見文（組み込み版）'],phone:['☎️','自動音声メニュー・予約確認・障害案内'],talk:['🧑‍🏫','製品説明・社内研修・手順の説明'],user:['✍️','自分で登録した英文']};
 const LS = {get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 let userScripts = LS.get('ss.user',[]);
 const allScripts = () => [...BUILTIN,...userScripts.map(u=>({...u,cat:'user'}))];
